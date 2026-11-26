@@ -1011,13 +1011,11 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
-    def test_feed_log_is_bounded_while_every_request_is_capped(
-        self, data_api, mock_client, monkeypatch
-    ):
-        """Requests with a retention cap must not make the feed keep a whole scan."""
-        from bec_lib.data_api.paths import redis as redis_module
-
-        monkeypatch.setattr(redis_module, "_FEED_LOG_CAP", 3)
+    def test_feed_log_holds_what_the_requests_of_the_feed_hold(self, data_api, mock_client):
+        """
+        The log serves requests that attach later. It keeps the messages of the points a
+        request still holds: a cap of 2 frames must not leave every frame of the scan in memory.
+        """
         mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
         item = make_scan_item(mock_client, "scan_1")
         register_scan(mock_client, {"scan_1": item})
@@ -1031,16 +1029,52 @@ class TestAxisModes:
             max_buffer_size=2,
         )
         feed = next(iter(plugin._feeds.values()))
-        for index in range(6):
+        for index in range(300):
             feed.callback({"data": self._async_add_message(index)})
-        assert len(feed.log) == 3
-        ups_b = []
+        assert len(feed.log) == 2
+        ups_b = []  # a request without a cap attaches: from now on the log keeps everything
         sub_b = data_api.subscribe(
             sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         source = ups_b[-1].get("det", "wave")
-        assert tuple(source.ordinals) == (3, 4, 5)
+        assert tuple(source.ordinals) == (298, 299)
         assert source.metadata["stream_trimmed"] is True
+        for index in range(300, 310):
+            feed.callback({"data": self._async_add_message(index)})
+        assert len(feed.log) == 12
+        sub_a.close()
+        sub_b.close()
+
+    def test_feed_log_keeps_every_fragment_of_the_rows_that_are_held(self, data_api, mock_client):
+        """A row is built from several messages: a later request needs all of them."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        sub_a = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=lambda _: None,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        for count in range(30):  # 10 rows of 3 fragments
+            row = count // 3
+            message = async_msg("wave", [count], count, "add_slice", slice_index=row)
+            feed.callback({"data": message})
+        assert len(feed.log) == 6
+        ups_b = []
+        sub_b = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=ups_b.append,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        source = ups_b[-1].get("det", "wave")
+        assert tuple(source.ordinals) == (8, 9)
+        assert [list(row) for row in source.values] == [[24, 25, 26], [27, 28, 29]]
         sub_a.close()
         sub_b.close()
 

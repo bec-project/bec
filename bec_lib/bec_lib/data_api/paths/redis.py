@@ -56,10 +56,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = bec_logger.logger
 
-#: Messages an async feed keeps for late requests while every request on it has a
-#: retention cap (the device server keeps about as many in the stream).
-_FEED_LOG_CAP = 1000
-
 #: The streams whose last message Redis keeps: they have a current value, and a history.
 _VALUE_STREAMS = frozenset({DeviceStream.READBACK, DeviceStream.CONFIGURATION})
 
@@ -361,14 +357,25 @@ class RedisDataPath(DataPath):
                 feed.state[name] = msg_obj
             return
         log.append(msg_obj)
-        # Requests without a cap hold the data anyway (the log only adds references);
-        # when all are capped, keep a bounded tail so the log cannot outgrow them.
-        caps = [request.bundle.max_buffer_size for request in holders]
-        if caps and all(cap is not None for cap in caps):
-            limit = max(_FEED_LOG_CAP, *caps)
-            while len(log) > limit:
-                log.popleft()
-                feed.trimmed = True
+
+    def _trim_async_log(self, feed: _Feed, feed_key: tuple) -> None:
+        """Drop the logged messages of points no request of the feed holds any more. Lock held."""
+        held_from = None
+        for request in self._scan_requests.get(feed_key[1], []):
+            for spec in request.specs:
+                if spec.available and self._async_feed_key(request.scan_id, spec) == feed_key:
+                    series = request.bundle.series.get(spec.key)
+                    first = series.trimmed_below if series is not None else 0
+                    held_from = first if held_from is None else min(held_from, first)
+        while feed.log and (self._point_index(feed.log[0], feed_key[3]) or 0) < (held_from or 0):
+            feed.log.popleft()
+            feed.trimmed = True
+
+    def _point_index(self, msg_obj: DeviceMessage, signal: str) -> int | None:
+        """The ordinal of the point a logged message belongs to: its row, or its message index."""
+        update = msg_obj.metadata.get("async_update")
+        row = update.get("index") if isinstance(update, dict) else getattr(update, "index", None)
+        return row if isinstance(row, int) else self._stream_index(msg_obj, signal)
 
     @staticmethod
     def _stream_index(msg_obj: DeviceMessage, signal: str) -> int | None:
@@ -399,6 +406,8 @@ class RedisDataPath(DataPath):
             if not requests:
                 return
             touched = self._ingest_message(requests, msg_obj, device)
+            if feed is not None:
+                self._trim_async_log(feed, feed_key)
         for request in touched:
             request.notify(UpdateReason.LIVE)
 
