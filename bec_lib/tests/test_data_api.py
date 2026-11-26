@@ -1056,17 +1056,70 @@ class TestAxisModes:
         source = ups_b[-1].get("det", "wave")
         assert [list(row) for row in source.values[-2:]] == [[300], [7]]
 
-        monkeypatch.setattr(mock_client.connector, "xrange", lambda *a, **k: [])
-        ups_c = []  # the stream is gone: what the log holds, flagged as trimmed
-        sub_c = data_api.subscribe(
-            sources=[("det", "wave")],
-            scan="scan_1",
-            callback=ups_c.append,
-            update_rate=None,
-            max_buffer_size=2,
-        )
-        assert ups_c[-1].get("det", "wave").metadata["stream_trimmed"] is True
-        for sub in (sub_a, sub_b, sub_c):
+        for sub in (sub_a, sub_b):
+            sub.close()
+
+    def test_later_request_with_a_cap_reads_only_what_it_keeps(
+        self, data_api, mock_client, monkeypatch
+    ):
+        """
+        A later request with a cap reads nothing from Redis when the log holds its points,
+        and otherwise only the end of the stream: never the whole scan to keep a few rows.
+        """
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+
+        def subscribe(cap, callback=lambda _: None):
+            return data_api.subscribe(
+                sources=[("det", "wave")],
+                scan="scan_1",
+                callback=callback,
+                update_rate=None,
+                max_buffer_size=cap,
+            )
+
+        sub_a = subscribe(2)
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        sent = []
+        for count in range(900):  # 300 rows of 3 fragments
+            sent.append(async_msg("wave", [count], count, "add_slice", slice_index=count // 3))
+            feed.callback({"data": sent[-1]})
+        assert len(feed.log) == 6
+        xrange = mock.MagicMock(return_value=[{"data": m} for m in sent])
+        read = []
+
+        def get_last(_topic, count=1):
+            read.append(count)
+            return [{"data": m} for m in sent[-count:]]
+
+        monkeypatch.setattr(mock_client.connector, "xrange", xrange)
+        monkeypatch.setattr(mock_client.connector, "get_last", get_last)
+
+        ups_b = []
+        sub_b = subscribe(2, ups_b.append)  # what a second Image does
+        source = ups_b[-1].get("det", "wave")
+        assert tuple(source.ordinals) == (298, 299)
+        assert "stream_trimmed" not in source.metadata
+        assert read == []
+
+        ups_c = []
+        sub_c = subscribe(50, ups_c.append)
+        source = ups_c[-1].get("det", "wave")
+        assert tuple(source.ordinals) == tuple(range(250, 300))
+        assert [list(row) for row in source.values[:1]] == [[750, 751, 752]]
+        assert "stream_trimmed" not in source.metadata
+        xrange.assert_not_called()
+        assert max(read) < 300  # the end of the stream, not all 900 messages
+        feed.callback({"data": async_msg("wave", [7], 900, "add_slice", slice_index=300)})
+        assert tuple(ups_c[-1].get("det", "wave").ordinals) == tuple(range(251, 301))
+
+        monkeypatch.setattr(mock_client.connector, "get_last", lambda *a, **k: None)
+        ups_d = []  # the stream is gone: what the log holds, flagged as trimmed
+        sub_d = subscribe(500, ups_d.append)
+        assert ups_d[-1].get("det", "wave").metadata["stream_trimmed"] is True
+        for sub in (sub_a, sub_b, sub_c, sub_d):
             sub.close()
 
     def test_feed_log_keeps_every_fragment_of_the_rows_that_are_held(self, data_api, mock_client):

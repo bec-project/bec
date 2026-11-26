@@ -323,31 +323,76 @@ class RedisDataPath(DataPath):
         Replay what the shared feed already delivered into one request. Lock held.
 
         The feed keeps its delivered messages in memory, so the replay needs no Redis
-        read and does not depend on what the (trimmed) stream still holds. A message
-        that is in the stream but not yet dispatched is not part of the log: it arrives
-        through the feed callback, exactly once.
+        read as long as the log holds what the request can keep. A message that is in
+        the stream but not yet dispatched arrives through the feed callback, exactly once.
         """
-        feed = self._feeds.get(self._async_feed_key(request.scan_id, spec))
+        key = self._async_feed_key(request.scan_id, spec)
+        feed = self._feeds.get(key)
         if feed is None:
             return
-        key = self._async_feed_key(request.scan_id, spec)
-        messages = feed.messages()
-        if feed.cut:
-            # The log holds what the other requests kept; this one reads the stream again.
-            stored = self.client.connector.xrange(feed.endpoint, "-", "+") or []
-            stored = [m["data"] for m in stored if isinstance(m.get("data"), DeviceMessage)]
+        cap = request.bundle.max_buffer_size
+        messages, trimmed = list(feed.log), feed.trimmed
+        if feed.cut and not self._log_holds(feed, key[3], cap):
+            # The log holds what the other requests kept; this one keeps more of the stream.
+            stored, whole = self._read_stream(feed, key[3], cap)
             indices = [self._stream_index(m, key[3]) for m in stored]
             if stored and None not in indices:
                 messages = stored
                 # A message of the stream that the feed has not delivered yet comes once.
                 request.state.setdefault("replayed", {})[key] = max(indices)
-                request.set_status(spec.key, stream_trimmed=True if min(indices) > 0 else None)
+                trimmed = whole and min(indices) > 0
             else:
-                request.set_status(spec.key, stream_trimmed=True)
-        elif feed.trimmed:
+                trimmed = True
+        if trimmed:
             request.set_status(spec.key, stream_trimmed=True)
-        for msg_obj in messages:
+        for msg_obj in [*messages, *feed.messages()[len(feed.log) :]]:
             self._ingest_message([request], msg_obj, spec.device)
+        points = [self._point_index(m, key[3]) for m in messages]
+        first = min((p for p in points if p is not None), default=0)
+        if cap is not None and not trimmed and first > 0:
+            # The rows before the replay are beyond the cap of this request: dropped, not missing.
+            for other in request.specs:
+                series = request.bundle.series.get(other.key)
+                if series is not None and self._async_feed_key(request.scan_id, other) == key:
+                    series.drop_below(first)
+
+    def _log_holds(self, feed: _Feed, signal: str, cap: int | None) -> bool:
+        """Whether the cut log still holds the last ``cap`` points of the stream. Lock held."""
+        if cap is None or not feed.log:
+            return False
+        first, last = (self._point_index(feed.log[i], signal) for i in (0, -1))
+        return first is not None and last is not None and last - first + 1 >= cap
+
+    def _read_stream(
+        self, feed: _Feed, signal: str, cap: int | None
+    ) -> tuple[list[DeviceMessage], bool]:
+        """
+        Read from Redis what a later request can keep. Lock held.
+
+        Args:
+            feed (_Feed): The feed of the stream.
+            signal (str): The signal the stream index is stamped for.
+            cap (int | None): Most points the request keeps; None reads the whole stream.
+
+        Returns:
+            tuple[list[DeviceMessage], bool]: The messages of the last ``cap`` points, and
+                whether they are everything the stream holds.
+        """
+        connector = self.client.connector
+        if cap is None:
+            stored = connector.xrange(feed.endpoint, "-", "+") or []
+            return [m["data"] for m in stored if isinstance(m.get("data"), DeviceMessage)], True
+        count = cap + 1  # one point more: the oldest point read may be cut in half
+        while True:
+            stored = connector.get_last(feed.endpoint, count=count) or []
+            messages = [m["data"] for m in stored if isinstance(m.get("data"), DeviceMessage)]
+            points = {self._point_index(m, signal) for m in messages}
+            if len(stored) < count:
+                return messages, True
+            if len(points) > cap:
+                oldest = min(p for p in points if p is not None)
+                return [m for m in messages if self._point_index(m, signal) != oldest], False
+            count *= 2  # a point of several fragments: read further back
 
     def _log_async_message(self, feed: _Feed, feed_key: tuple, msg_obj: DeviceMessage) -> None:
         """Keep a delivered message for late requests of the same feed. Lock held."""
