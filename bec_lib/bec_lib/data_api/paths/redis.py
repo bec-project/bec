@@ -323,33 +323,63 @@ class RedisDataPath(DataPath):
         Replay what the shared feed already delivered into one request. Lock held.
 
         The feed keeps its delivered messages in memory, so the replay needs no Redis
-        read as long as the log holds what the request can keep. A message that is in
-        the stream but not yet dispatched arrives through the feed callback, exactly once.
+        read as long as the log holds what the request can keep. Otherwise a worker
+        reads the stream, outside the lock. A message that is in the stream but not yet
+        dispatched arrives through the feed callback, exactly once.
         """
         key = self._async_feed_key(request.scan_id, spec)
         feed = self._feeds.get(key)
         if feed is None:
             return
         cap = request.bundle.max_buffer_size
-        messages, trimmed = list(feed.log), feed.trimmed
         if feed.cut and not self._log_holds(feed, key[3], cap):
             # The log holds what the other requests kept; this one keeps more of the stream.
-            stored, whole = self._read_stream(feed, key[3], cap)
+            request.state.setdefault("pending", set()).add(key)  # live messages wait in the log
+            request.start_worker(self._replay_stream, spec, feed, name="data-api-catch-up")
+            return
+        self._replay(request, spec, feed, list(feed.log), feed.trimmed)
+
+    def _replay_stream(self, request: SourceRequest, spec: SourceSpec, feed: _Feed) -> None:
+        """Worker: read the stream from Redis without the lock, then replay it into the request."""
+        key = self._async_feed_key(request.scan_id, spec)
+        try:
+            stored, whole = self._read_stream(feed, key[3], request.bundle.max_buffer_size)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(f"Reading the stream of {spec.key} failed: {exc}")
+            stored, whole = [], True
+        with self._lock:
+            if request.cancelled:
+                return
+            request.state["pending"].discard(key)
             indices = [self._stream_index(m, key[3]) for m in stored]
             if stored and None not in indices:
-                messages = stored
+                last = max(indices)
                 # A message of the stream that the feed has not delivered yet comes once.
-                request.state.setdefault("replayed", {})[key] = max(indices)
-                trimmed = whole and min(indices) > 0
+                request.state.setdefault("replayed", {})[key] = last
+                # Delivered while the stream was read: these waited in the log.
+                later = [m for m in feed.log if (self._stream_index(m, key[3]) or 0) > last]
+                self._replay(request, spec, feed, [*stored, *later], whole and min(indices) > 0)
             else:
-                trimmed = True
+                self._replay(request, spec, feed, list(feed.log), True)
+        request.notify(UpdateReason.BACKFILL)
+
+    def _replay(
+        self,
+        request: SourceRequest,
+        spec: SourceSpec,
+        feed: _Feed,
+        messages: list[DeviceMessage],
+        trimmed: bool,
+    ) -> None:
+        """Ingest the messages a request catches up from, then the replace states. Lock held."""
+        key = self._async_feed_key(request.scan_id, spec)
         if trimmed:
             request.set_status(spec.key, stream_trimmed=True)
         for msg_obj in [*messages, *feed.messages()[len(feed.log) :]]:
             self._ingest_message([request], msg_obj, spec.device)
         points = [self._point_index(m, key[3]) for m in messages]
         first = min((p for p in points if p is not None), default=0)
-        if cap is not None and not trimmed and first > 0:
+        if request.bundle.max_buffer_size is not None and not trimmed and first > 0:
             # The rows before the replay are beyond the cap of this request: dropped, not missing.
             for other in request.specs:
                 series = request.bundle.series.get(other.key)
@@ -367,7 +397,7 @@ class RedisDataPath(DataPath):
         self, feed: _Feed, signal: str, cap: int | None
     ) -> tuple[list[DeviceMessage], bool]:
         """
-        Read from Redis what a later request can keep. Lock held.
+        Read from Redis what a later request can keep. Runs on a worker, without the lock.
 
         Args:
             feed (_Feed): The feed of the stream.
@@ -467,7 +497,8 @@ class RedisDataPath(DataPath):
             requests = [
                 request
                 for request in self._scan_requests.get(scan_id, [])
-                if index is None or index > request.state.get("replayed", {}).get(feed_key, -1)
+                if feed_key not in request.state.get("pending", ())
+                and (index is None or index > request.state.get("replayed", {}).get(feed_key, -1))
             ]
             if not requests:
                 return

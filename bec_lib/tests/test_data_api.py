@@ -1,6 +1,7 @@
 """Tests for the DataAPI v2 facade and live plugin."""
 
 import gc
+import threading
 import time
 import weakref
 from types import SimpleNamespace
@@ -859,6 +860,13 @@ class TestLifecycle:
         assert not plugin._scan_requests
 
 
+def join_catch_up(subscription):
+    """Wait for the workers that read a stream for a later request."""
+    for request in subscription._all_requests():
+        for worker in request.workers:
+            worker.join(5)
+
+
 class TestAxisModes:
     def test_async_message_without_update_metadata_is_dropped(self, data_api, mock_client):
         """An async message needs an explicit acquisition operation: a message
@@ -1048,6 +1056,7 @@ class TestAxisModes:
         sub_b = data_api.subscribe(
             sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
+        join_catch_up(sub_b)
         source = ups_b[-1].get("det", "wave")
         assert tuple(source.ordinals) == tuple(range(301))
         assert "stream_trimmed" not in source.metadata
@@ -1058,6 +1067,56 @@ class TestAxisModes:
 
         for sub in (sub_a, sub_b):
             sub.close()
+
+    def test_later_request_reads_the_stream_without_the_lock(
+        self, data_api, mock_client, monkeypatch
+    ):
+        """
+        The read of a whole stream must not hold the Data API lock: every other plot would
+        wait for it. What the feed delivers meanwhile reaches the later request once.
+        """
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        sub_a = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=lambda _: None,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        sent = [
+            async_msg("wave", [index, index], index, "add_slice", slice_index=index // 2)
+            for index in range(12)
+        ]
+        for message in sent[:10]:
+            feed.callback({"data": message})
+        lock_was_free = []
+
+        def xrange(*_args, **_kwargs):
+            # Another thread delivers a live message while the stream is being read.
+            live = threading.Thread(target=feed.callback, args=({"data": sent[10]},))
+            live.start()
+            live.join(2)
+            lock_was_free.append(not live.is_alive())
+            return [{"data": m} for m in sent[:10]]
+
+        monkeypatch.setattr(mock_client.connector, "xrange", xrange)
+        ups_b = []
+        sub_b = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
+        )
+        join_catch_up(sub_b)
+        assert lock_was_free == [True]
+        feed.callback({"data": sent[11]})
+        source = ups_b[-1].get("det", "wave")
+        assert [list(row) for row in source.values] == [
+            [i, i, i + 1, i + 1] for i in range(0, 12, 2)
+        ]
+        sub_a.close()
+        sub_b.close()
 
     def test_later_request_with_a_cap_reads_only_what_it_keeps(
         self, data_api, mock_client, monkeypatch
@@ -1106,6 +1165,7 @@ class TestAxisModes:
 
         ups_c = []
         sub_c = subscribe(50, ups_c.append)
+        join_catch_up(sub_c)
         source = ups_c[-1].get("det", "wave")
         assert tuple(source.ordinals) == tuple(range(250, 300))
         assert [list(row) for row in source.values[:1]] == [[750, 751, 752]]
@@ -1118,6 +1178,7 @@ class TestAxisModes:
         monkeypatch.setattr(mock_client.connector, "get_last", lambda *a, **k: None)
         ups_d = []  # the stream is gone: what the log holds, flagged as trimmed
         sub_d = subscribe(500, ups_d.append)
+        join_catch_up(sub_d)
         assert ups_d[-1].get("det", "wave").metadata["stream_trimmed"] is True
         for sub in (sub_a, sub_b, sub_c, sub_d):
             sub.close()
