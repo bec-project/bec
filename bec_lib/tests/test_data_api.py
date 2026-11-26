@@ -1143,6 +1143,21 @@ class TestAxisModes:
         assert list(updates[-1].get("det", "wave").as_array()) == [2]
         sub.close()
 
+    def test_replace_signal_of_a_trimmed_stream_is_not_flagged(self, data_api, mock_client):
+        """A replace signal has a state, not a history: nothing of it can be missing."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=updates.append, update_rate=None
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        feed.callback({"data": async_msg("wave", [1, 2], 1200, "replace")})
+        assert "stream_trimmed" not in updates[-1].get("det", "wave").metadata
+        sub.close()
+
     def _replace_feed_of_two_signals(self, data_api, mock_client):
         """Subscribe to the signals ``a`` and ``b`` of one feed; returns (sub, feed, updates)."""
         mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(

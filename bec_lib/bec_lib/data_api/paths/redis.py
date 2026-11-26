@@ -357,6 +357,13 @@ class RedisDataPath(DataPath):
             if feed_key in request.state.get("feeds", ())
         ]
         log = feed.log
+        update = msg_obj.metadata.get("async_update")
+        kind = update.get("type") if isinstance(update, dict) else getattr(update, "type", None)
+        if kind == "replace":
+            for name in msg_obj.signals:
+                feed.state.pop(name, None)  # goes to the end: the state replays in arrival order
+                feed.state[name] = msg_obj
+            return
         if feed.delivered == 1 and (self._stream_index(msg_obj, feed_key[3]) or 0) > 0:
             # The first message we see is not the first of the scan: the stream had been
             # trimmed before this feed attached.
@@ -365,13 +372,6 @@ class RedisDataPath(DataPath):
                 for spec in request.specs:
                     if spec.available and self._async_feed_key(request.scan_id, spec) == feed_key:
                         request.set_status(spec.key, stream_trimmed=True)
-        update = msg_obj.metadata.get("async_update")
-        kind = update.get("type") if isinstance(update, dict) else getattr(update, "type", None)
-        if kind == "replace":
-            for name in msg_obj.signals:
-                feed.state.pop(name, None)  # goes to the end: the state replays in arrival order
-                feed.state[name] = msg_obj
-            return
         log.append(msg_obj)
 
     def _trim_async_log(self, feed: _Feed, feed_key: tuple) -> None:
