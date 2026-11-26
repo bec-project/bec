@@ -351,14 +351,13 @@ class TestStoredScanSpecs:
             ("async", "gauss_data", "gauss_data_y"),
         ]
 
-    def test_message_without_stored_info_pairs_its_signals_by_row(self):
-        """The catalog lists nothing: the signals are taken as one row per scan point."""
+    def test_message_without_stored_info_is_unindexed(self):
         specs = stored_scan_specs(
             fake_client(), [("samx", "samx"), ("det", "wave")], history_message({}, 5)
         )
         assert [(s.kind, s.available, s.estimated_bytes, s.provisional) for s in specs] == [
-            ("monitored", True, None, True),
-            ("monitored", True, None, True),
+            ("unindexed", True, None, True),
+            ("unindexed", True, None, True),
         ]
 
     def test_helpers(self):

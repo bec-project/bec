@@ -12,8 +12,10 @@ short-lived worker thread, block by block. Every block is delivered as a
 
 from __future__ import annotations
 
+import functools
 from typing import Any, Callable, Iterator, Mapping
 
+import h5py
 import numpy as np
 
 from bec_lib.logger import bec_logger
@@ -48,6 +50,31 @@ from ..views import (
 )
 
 logger = bec_logger.logger
+
+
+#: Scan files whose dataset list is remembered; one small dict per file.
+_LISTED_FILES = 100
+
+
+@functools.lru_cache(maxsize=_LISTED_FILES)
+def _datasets_of_file(file_path: str | None) -> dict[str, dict[str, dict]] | None:
+    """
+    The datasets of a scan file as the file writer lists them: device -> signal -> shape, dtype.
+
+    Only the structure of the file is read, once per file. ``None`` when it cannot be read.
+    """
+    try:
+        with h5py.File(file_path, "r") as file:
+            listed: dict[str, dict[str, dict]] = {}
+            for device, signals in file["/entry/collection/devices"].items():
+                for signal, group in signals.items() if isinstance(signals, h5py.Group) else ():
+                    value = group.get("value") if isinstance(group, h5py.Group) else None
+                    if isinstance(value, h5py.Dataset):
+                        info = {"shape": value.shape or (1,), "dtype": value.dtype.name}
+                        listed.setdefault(device, {})[signal] = info
+            return listed
+    except (OSError, KeyError, TypeError):
+        return None
 
 
 class _SourceLoad:
@@ -314,6 +341,10 @@ class FileDataPath(DataPath):
         msg = self.catalog_entry(context.scan_id)
         if msg is None:
             return None
+        if not msg.stored_data_info and hasattr(msg, "model_copy"):
+            # Written by an older BEC: the file itself says which datasets it holds.
+            listed = _datasets_of_file(getattr(msg, "file_path", None))
+            msg = msg.model_copy(update={"stored_data_info": listed}) if listed else msg
         specs = stored_scan_specs(self.client, sources, msg)
         # The estimate costs no file I/O (stored_data_info only); the gate is
         # decided here and enforced by DataPath.open().
