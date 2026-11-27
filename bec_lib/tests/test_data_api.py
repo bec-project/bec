@@ -1214,6 +1214,68 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
+    def test_feed_log_drops_rows_that_arrived_out_of_order(self, data_api, mock_client):
+        """A row that is still held can lead the log: the rows behind it are dropped all the same."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=updates.append,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        for count, row in enumerate([100, *range(100)]):
+            feed.callback({"data": async_msg("wave", [row], count, "add_slice", slice_index=row)})
+        assert tuple(updates[-1].get("det", "wave").ordinals) == (99, 100)
+        assert len(feed.log) == 2
+        sub.close()
+
+    def test_feed_log_is_cut_for_each_signal_of_a_stream(self, data_api, mock_client, monkeypatch):
+        """
+        A signal that is sent rarely must not keep every message of a fast one in the log,
+        and a later request still gets the last rows of both.
+        """
+        mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(
+            "gauss", "gauss_data", ("x", "y")
+        )
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+
+        def subscribe(cap, callback=lambda _: None):
+            return data_api.subscribe(
+                sources=GAUSS_KEYS,
+                scan="scan_1",
+                callback=callback,
+                update_rate=None,
+                max_buffer_size=cap,
+            )
+
+        sub_a = subscribe(2)
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        sent = [partial_msg("y", 0)] + [partial_msg("x", i) for i in range(499)]
+        for message in sent:
+            feed.callback({"data": message})
+        assert len(feed.log) == 3  # the one row of y and the last two of x
+
+        monkeypatch.setattr(
+            mock_client.connector,
+            "get_last",
+            lambda _topic, count=1: [{"data": m} for m in sent[-count:]],
+        )
+        ups_b = []
+        sub_b = subscribe(50, ups_b.append)
+        join_catch_up(sub_b)
+        assert tuple(ups_b[-1].get("gauss", "gauss_data_x").ordinals) == tuple(range(449, 499))
+        assert tuple(ups_b[-1].get("gauss", "gauss_data_y").ordinals) == (0,)
+        sub_a.close()
+        sub_b.close()
+
     def test_later_request_with_a_cap_reads_only_what_it_keeps(
         self, data_api, mock_client, monkeypatch
     ):

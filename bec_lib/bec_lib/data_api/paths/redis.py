@@ -107,6 +107,8 @@ class _Feed:
     trimmed: bool = False
     #: Whether the log was cut to what its requests hold: the stream in Redis may hold more.
     cut: bool = False
+    #: Per signal, the first point the requests held when the log was last trimmed.
+    held: dict[str, int] = field(default_factory=dict)
 
     def messages(self) -> list[DeviceMessage]:
         """What a later request catches up from: the log, then the state of the replace signals."""
@@ -332,7 +334,7 @@ class RedisDataPath(DataPath):
         if feed is None:
             return
         cap = request.bundle.max_buffer_size
-        if feed.cut and not self._log_holds(feed, key[3], cap):
+        if feed.cut and not self._log_holds(feed, self._feed_entries(request, key), cap):
             # The log holds what the other requests kept; this one keeps more of the stream.
             request.state.setdefault("pending", set()).add(key)  # live messages wait in the log
             self._expect_replay(request, key, 1)  # not complete before the rows are in
@@ -344,7 +346,8 @@ class RedisDataPath(DataPath):
         """Worker: read the stream from Redis without the lock, then replay it into the request."""
         key = self._async_feed_key(request.scan_id, spec)
         try:
-            stored, whole = self._read_stream(feed, key[3], request.bundle.max_buffer_size)
+            entries = self._feed_entries(request, key)
+            stored, whole = self._read_stream(feed, entries, request.bundle.max_buffer_size)
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(f"Reading the stream of {spec.key} failed: {exc}")
             stored, whole = [], True
@@ -391,36 +394,48 @@ class RedisDataPath(DataPath):
             request.set_status(spec.key, stream_trimmed=True)
         for msg_obj in [*messages, *feed.messages()[len(feed.log) :]]:
             self._ingest_message([request], msg_obj, spec.device)
-        points = [self._point_index(m, key[3]) for m in messages]
-        first = min((p for p in points if p is not None), default=0)
-        if request.bundle.max_buffer_size is not None and not trimmed and first > 0:
-            # The rows before the replay are beyond the cap of this request: dropped, not missing.
-            for other in request.specs:
-                series = request.bundle.series.get(other.key)
-                if series is not None and self._async_feed_key(request.scan_id, other) == key:
-                    series.drop_below(first)
+        if request.bundle.max_buffer_size is None or trimmed:
+            return
+        first: dict[str, int] = {}
+        for name, point in (item for m in messages for item in self._points(m).items()):
+            first[name] = min(point, first.get(name, point))
+        for other in request.specs:
+            series = request.bundle.series.get(other.key)
+            if series is not None and self._async_feed_key(request.scan_id, other) == key:
+                # The rows before the replay are beyond the cap of this request: dropped, not missing.
+                series.drop_below(first.get(other.entry, 0))
 
-    def _log_holds(self, feed: _Feed, signal: str, cap: int | None) -> bool:
-        """Whether the cut log still holds the last ``cap`` points of the stream. Lock held."""
+    def _feed_entries(self, request: SourceRequest, key: tuple) -> list[str]:
+        """The signals of one feed that a request follows."""
+        return [
+            spec.entry
+            for spec in request.specs
+            if spec.available
+            and spec.kind == SourceKind.ASYNC
+            and self._async_feed_key(request.scan_id, spec) == key
+        ]
+
+    def _log_holds(self, feed: _Feed, entries: list[str], cap: int | None) -> bool:
+        """Whether the cut log still holds the last ``cap`` points of every signal. Lock held."""
         if cap is None or not feed.log:
             return False
-        first, last = (self._point_index(feed.log[i], signal) for i in (0, -1))
-        return first is not None and last is not None and last - first + 1 >= cap
+        points = [self._points(message) for message in feed.log]
+        return all(len({p[entry] for p in points if entry in p}) >= cap for entry in entries)
 
     def _read_stream(
-        self, feed: _Feed, signal: str, cap: int | None
+        self, feed: _Feed, entries: list[str], cap: int | None
     ) -> tuple[list[DeviceMessage], bool]:
         """
         Read from Redis what a later request can keep. Runs on a worker, without the lock.
 
         Args:
             feed (_Feed): The feed of the stream.
-            signal (str): The signal the stream index is stamped for.
+            entries (list[str]): The signals of the stream the request follows.
             cap (int | None): Most points the request keeps; None reads the whole stream.
 
         Returns:
-            tuple[list[DeviceMessage], bool]: The messages of the last ``cap`` points, and
-                whether they are everything the stream holds.
+            tuple[list[DeviceMessage], bool]: The messages of the last ``cap`` points of every
+                signal, and whether they are everything the stream holds.
         """
         connector = self.client.connector
         if cap is None:
@@ -430,13 +445,14 @@ class RedisDataPath(DataPath):
         while True:
             stored = connector.get_last(feed.endpoint, count=count) or []
             messages = [m["data"] for m in stored if isinstance(m.get("data"), DeviceMessage)]
-            points = {self._point_index(m, signal) for m in messages}
             if len(stored) < count:
                 return messages, True
-            if len(points) > cap:
-                oldest = min(p for p in points if p is not None)
-                return [m for m in messages if self._point_index(m, signal) != oldest], False
-            count *= 2  # a point of several fragments: read further back
+            points = [self._points(message) for message in messages]
+            read = {entry: {p[entry] for p in points if entry in p} for entry in entries}
+            if all(len(found) > cap for found in read.values()):
+                oldest = {entry: min(found) for entry, found in read.items()}
+                return [m for m, p in zip(messages, points) if not self._below(p, oldest, 1)], False
+            count *= 2  # a point of several fragments, or a signal that is sent rarely
 
     def _log_async_message(self, feed: _Feed, feed_key: tuple, msg_obj: DeviceMessage) -> None:
         """Keep a delivered message for late requests of the same feed. Lock held."""
@@ -465,22 +481,41 @@ class RedisDataPath(DataPath):
 
     def _trim_async_log(self, feed: _Feed, feed_key: tuple) -> None:
         """Drop the logged messages of points no request of the feed holds any more. Lock held."""
-        held_from = None
+        held: dict[str, int] = {}  # per signal, the first point a request still holds
         for request in self._scan_requests.get(feed_key[1], []):
             for spec in request.specs:
                 if spec.available and self._async_feed_key(request.scan_id, spec) == feed_key:
                     series = request.bundle.series.get(spec.key)
                     first = series.trimmed_below if series is not None else 0
-                    held_from = first if held_from is None else min(held_from, first)
-        while feed.log and (self._point_index(feed.log[0], feed_key[3]) or 0) < (held_from or 0):
+                    held[spec.entry] = min(first, held.get(spec.entry, first))
+        dropped = False
+        while feed.log and self._below(self._points(feed.log[0]), held):
             feed.log.popleft()
-            feed.cut = True
+            dropped = True
+        if not dropped and held != feed.held:
+            # A held point can lead the log: rows arrive out of order, signals at their own pace.
+            kept = [m for m in feed.log if not self._below(self._points(m), held)]
+            dropped = len(kept) < len(feed.log)
+            feed.log = collections.deque(kept)
+        feed.held = held
+        feed.cut = feed.cut or dropped
 
-    def _point_index(self, msg_obj: DeviceMessage, signal: str) -> int | None:
-        """The ordinal of the point a logged message belongs to: its row, or its message index."""
+    @staticmethod
+    def _below(points: dict[str, int], limits: dict[str, int], margin: int = 0) -> bool:
+        """Whether a message lies below the limit of every signal it carries that has one."""
+        if not points:  # a message without an index cannot be placed: it goes with the first cut
+            return any(limits.values())
+        return all(
+            point < limits[name] + margin for name, point in points.items() if name in limits
+        )
+
+    def _points(self, msg_obj: DeviceMessage) -> dict[str, int]:
+        """Per signal of a message the point it belongs to: its row, or the signal's own index."""
         update = msg_obj.metadata.get("async_update")
         row = update.get("index") if isinstance(update, dict) else getattr(update, "index", None)
-        return row if isinstance(row, int) else self._stream_index(msg_obj, signal)
+        if isinstance(row, int):
+            return dict.fromkeys(msg_obj.signals, row)
+        return self._stream_indices(msg_obj)
 
     @staticmethod
     def _stream_indices(msg_obj: DeviceMessage) -> dict[str, int]:
