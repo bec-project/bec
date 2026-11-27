@@ -1634,6 +1634,63 @@ def test_file_of_a_scan_without_a_catalog_is_listed_before_the_lock(
             result.close()
 
 
+def test_file_of_a_scan_without_a_catalog_is_listed_before_the_lock_when_it_is_stored(
+    data_api, mock_client, tmp_path, monkeypatch
+):
+    """The scan a subscription is on moves to its file: an older BEC's file is opened unlocked."""
+    item = ScanItem(queue_id="q", scan_number=[1], scan_id=["old"], status="closed")
+    item.status_message = messages.ScanStatusMessage(scan_id="old", status="closed", info={})
+    item.status_message.readout_priority = {"monitored": ["samx"], "baseline": []}
+    item.live_data = LiveScanData()
+    item.live_data.set(
+        0,
+        messages.ScanMessage(
+            point_id=0,
+            scan_id="old",
+            data={"samx": {"samx": {"value": -1.0, "timestamp": 100.0}}},
+            metadata={"scan_id": "old"},
+        ),
+    )
+    mock_client.queue.scan_storage.find_scan_by_ID.side_effect = lambda sid: (
+        item if sid == "old" else None
+    )
+    mock_client.history = mock.MagicMock()
+    mock_client.history.get_message.return_value = None
+    sub = data_api.subscribe(sources=[("samx", "samx")], scan="old", callback=lambda _: None)
+    assert {s.path_name for s in sub._specs} == {"RedisDataPath"}
+    rows = np.arange(4.0)
+    _serve_scan_file(mock_client, "old", tmp_path / "old.h5", {("samx", "samx"): (rows, rows)})
+    message = mock_client.history.get_message("old")
+    object.__setattr__(message, "stored_data_info", None)
+    object.__setattr__(message, "file_path", str(tmp_path / "old.h5"))
+    listed = file_path_module._datasets_of_file
+    listed.cache_clear()
+    reads = []  # for every read of the file: could another thread take the lock meanwhile?
+
+    def spy(file_path):
+        free = []
+
+        def try_lock():
+            free.append(data_api._lock.acquire(timeout=0.2))
+            if free[0]:
+                data_api._lock.release()
+
+        other = threading.Thread(target=try_lock)
+        other.start()
+        other.join()
+        misses = listed.cache_info().misses
+        found = listed(file_path)
+        if listed.cache_info().misses > misses:  # this call read the file
+            reads.extend(free)
+        return found
+
+    monkeypatch.setattr(file_path_module, "_datasets_of_file", spy)
+    sub._on_scan_history_update(history_msg=message)
+    assert {s.path_name for s in sub._specs} == {"FileDataPath"}
+    assert reads == [True]
+    sub.close()
+
+
 def test_stack_read_in_one_piece_is_cut_when_the_catalog_lists_no_datasets(data_api, mock_client):
     """A reference without ``read_slabs`` is read whole: its shape then tells the stack."""
     stack = np.arange(60.0).reshape(5, 3, 4)

@@ -957,6 +957,9 @@ class Subscription:
         self._flush_deferred()
 
     def _on_scan_history_update(self, history_msg=None, **_kwargs) -> None:
+        if history_msg is not None and history_msg.scan_id == self._scan_id:
+            # The move to the file may list the file of an older BEC: before the lock.
+            self._api._prepare_paths(history_msg.scan_id)
         with self._lock:
             self._handle_scan_history_update(history_msg)
         self._flush_deferred()
