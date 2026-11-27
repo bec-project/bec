@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import builtins
 import datetime
-import importlib
 import threading
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING, Any, Literal
@@ -23,19 +22,14 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
     from bec_lib.scan_manager import ScanManager
 
-    try:
-        import pandas as pd
-    except ImportError:
-        logger.info("Unable to import `pandas` optional dependency")
-
 
 class ScanItem:
     """
     Represents a single scan with its associated data, metadata, and status.
 
     A ScanItem stores comprehensive information about a scan including its status, timing,
-    data segments, and callbacks. It provides methods to emit data and status updates,
-    convert data to pandas DataFrames, and describe the scan details.
+    data segments, and callbacks. It provides methods to emit data and status updates and
+    to describe the scan details.
 
     Attributes:
         scan_manager: The scan manager instance that manages this scan item.
@@ -151,37 +145,6 @@ class ScanItem:
             if req is None:
                 continue
             req.callbacks.poll()
-
-    def _get_pandas(self):
-        try:
-            return importlib.import_module("pandas")
-        except ImportError as exc:
-            raise ImportError("Install `pandas` to use to_pandas() method") from exc
-
-    def to_pandas(self) -> pd.DataFrame:
-        """Convert scan data to a pandas DataFrame.
-
-        Extracts all live scan data and organizes it into a pandas DataFrame with
-        multi-level columns: (device_name, signal_name, data_key).
-
-        Returns:
-            A pandas DataFrame containing the scan data.
-
-        Raises:
-            ImportError: If pandas is not installed.
-
-        Example:
-            >>> df = scan_item.to_pandas()
-            >>> print(df.columns)  # MultiIndex with (device, signal, key)
-        """
-        pd = self._get_pandas()
-        tmp = defaultdict(list)
-        for scan_msg in self.live_data.messages.values():
-            for dev, dev_data in scan_msg.data.items():
-                for signal, signal_data in dev_data.items():
-                    for key, value in signal_data.items():
-                        tmp[(dev, signal, key)].append(value)
-        return pd.DataFrame(tmp)
 
     def __eq__(self, other):
         return self.scan_id == other.scan_id
