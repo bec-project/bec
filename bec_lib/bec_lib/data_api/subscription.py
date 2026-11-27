@@ -46,6 +46,8 @@ _INFLIGHT_TIMEOUT = 1.0
 _JOIN_TIMEOUT = 0.25
 #: Scheduler key of deliveries handed over by a notify() made with the lock held.
 _HANDOFF = "__handoff__"
+#: Scheduler key of the retry a live follower makes when the scan history has loaded.
+_HISTORY_LOADED = "__history_loaded__"
 
 #: Most live updates a subscription emits a second per correlation group, in Hz.
 DEFAULT_UPDATE_RATE: float = 10.0
@@ -961,9 +963,13 @@ class Subscription:
 
     def _on_scan_history_loaded(self, **_kwargs) -> None:
         # The scan history loads in the background: a follower that was created before
-        # it was there finds the last saved scan now.
+        # it was there finds the last saved scan now. Not on this thread: it holds the lock
+        # of the callback handler, and the retry reads the scan storage, whose lock the
+        # dispatcher takes first and the handler's second.
         if self._scan_id is None:
-            self._api._retry_unbound()
+            self._scheduler.schedule(
+                self, _HISTORY_LOADED, time.monotonic(), lambda _key: self._api._retry_unbound()
+            )
 
     def _handle_scan_history_update(self, history_msg) -> None:
         if self._closed:

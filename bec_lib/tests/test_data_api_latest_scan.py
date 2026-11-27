@@ -1,5 +1,6 @@
 """Live followers while no scan runs: they show the most recent scan until the next one opens."""
 
+import threading
 from types import SimpleNamespace
 from unittest import mock
 
@@ -146,8 +147,43 @@ def test_idle_live_follower_finds_the_last_scan_when_the_history_has_loaded(data
     register_scan(mock_client, {"s7": item})
     sub._on_scan_history_loaded(history_msgs=[])
 
-    assert sub.scan_id == "s7"
+    assert wait_for(lambda: sub.scan_id == "s7")
     wait_for(lambda: updates and len(updates[-1].sources[("samx", "samx")].values) == 3)
+    sub.close()
+
+
+def test_history_loaded_event_does_not_wait_for_the_scan_storage(
+    data_api, mock_client, monkeypatch
+):
+    """
+    The event comes on the thread of the scan history, with the lock of the callback
+    handler held. The dispatcher holds the lock of the scan storage when it takes that
+    one, so the follower must not read the scan storage on the history thread.
+    """
+    mock_client.queue.scan_storage.storage = []
+    _set_history(mock_client, None)
+    sub = data_api.subscribe(sources=SOURCES, scan="live", callback=lambda _: None)
+    assert sub.scan_id is None
+    item = _finished_scan(mock_client, "s7", 7)
+    mock_client.queue.scan_storage.storage = [item]
+    register_scan(mock_client, {"s7": item})
+
+    storage_free = threading.Event()  # the dispatcher holds the scan storage until then
+    current_live_scan = client_views.current_live_scan
+
+    def waits_for_the_storage(client):
+        storage_free.wait(5)
+        return current_live_scan(client)
+
+    monkeypatch.setattr(client_views, "current_live_scan", waits_for_the_storage)
+    history_thread = threading.Thread(target=sub._on_scan_history_loaded)
+    history_thread.start()
+    history_thread.join(1)
+    returned = not history_thread.is_alive()
+    storage_free.set()
+    history_thread.join(5)
+    assert returned
+    assert wait_for(lambda: sub.scan_id == "s7")
     sub.close()
 
 
