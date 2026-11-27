@@ -353,14 +353,19 @@ class RedisDataPath(DataPath):
                 return
             request.state["pending"].discard(key)
             self._expect_replay(request, key, None)
-            indices = [self._stream_index(m, key[3]) for m in stored]
-            if stored and None not in indices:
-                last = max(indices)
+            indices = [self._stream_indices(m) for m in stored]
+            if stored and all(indices):
+                # Every signal of the stream counts its own messages: one cutoff for each.
+                first, last = {}, {}
+                for name, index in (item for found in indices for item in found.items()):
+                    first[name] = min(index, first.get(name, index))
+                    last[name] = max(index, last.get(name, index))
                 # A message of the stream that the feed has not delivered yet comes once.
                 request.state.setdefault("replayed", {})[key] = last
                 # Delivered while the stream was read: these waited in the log.
-                later = [m for m in feed.log if (self._stream_index(m, key[3]) or 0) > last]
-                self._replay(request, spec, feed, [*stored, *later], whole and min(indices) > 0)
+                later = [m for m in feed.log if not self._replayed(m, last)]
+                trimmed = whole and any(index > 0 for index in first.values())
+                self._replay(request, spec, feed, [*stored, *later], trimmed)
             else:
                 self._replay(request, spec, feed, list(feed.log), True)
         request.notify(UpdateReason.BACKFILL)
@@ -478,6 +483,19 @@ class RedisDataPath(DataPath):
         return row if isinstance(row, int) else self._stream_index(msg_obj, signal)
 
     @staticmethod
+    def _stream_indices(msg_obj: DeviceMessage) -> dict[str, int]:
+        """The message index of every signal a message carries, each counted on its own."""
+        indices = msg_obj.metadata.get("async_indices") or {}
+        return {name: index for name, index in indices.items() if isinstance(index, int)}
+
+    def _replayed(self, msg_obj: DeviceMessage, cutoffs: dict[str, int] | None) -> bool:
+        """Whether a request already has a message from its read of the stream."""
+        indices = self._stream_indices(msg_obj)
+        if not cutoffs or not indices:
+            return False
+        return all(index <= cutoffs.get(name, -1) for name, index in indices.items())
+
+    @staticmethod
     def _stream_index(msg_obj: DeviceMessage, signal: str) -> int | None:
         """The per-scan message index the device server stamps on async messages."""
         indices = msg_obj.metadata.get("async_indices") or {}
@@ -502,12 +520,11 @@ class RedisDataPath(DataPath):
                     self._log_async_message(feed, feed_key, msg_obj)
             if not isinstance(msg_obj, DeviceMessage):
                 return
-            index = self._stream_index(msg_obj, feed_key[3]) if feed_key is not None else None
             requests = [
                 request
                 for request in self._scan_requests.get(scan_id, [])
                 if feed_key not in request.state.get("pending", ())
-                and (index is None or index > request.state.get("replayed", {}).get(feed_key, -1))
+                and not self._replayed(msg_obj, request.state.get("replayed", {}).get(feed_key))
             ]
             if not requests:
                 return

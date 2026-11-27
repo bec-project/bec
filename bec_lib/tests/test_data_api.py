@@ -860,6 +860,20 @@ class TestLifecycle:
         assert not plugin._scan_requests
 
 
+def partial_msg(name, index):
+    """A message that carries one sub-signal of ``gauss_data``, with that signal's own counter."""
+    return messages.DeviceMessage(
+        signals={f"gauss_data_{name}": {"value": index, "timestamp": 100.0 + index}},
+        metadata={
+            "async_indices": {f"gauss_data_{name}": index},
+            "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+        },
+    )
+
+
+GAUSS_KEYS = [("gauss", "gauss_data_x"), ("gauss", "gauss_data_y")]
+
+
 def join_catch_up(subscription):
     """Wait for the workers that read a stream for a later request."""
     for request in subscription._all_requests():
@@ -1156,6 +1170,47 @@ class TestAxisModes:
         join_catch_up(sub_b)
         source = ups_b[-1].get("det", "wave")
         assert tuple(source.ordinals) == tuple(range(9)) and source.complete
+        sub_a.close()
+        sub_b.close()
+
+    def test_later_request_keeps_a_cutoff_for_each_signal_of_a_stream(
+        self, data_api, mock_client, monkeypatch
+    ):
+        """
+        The signals of one stream count their messages on their own. What a later request
+        has read of one signal must not hide a new message of another, slower one.
+        """
+        mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(
+            "gauss", "gauss_data", ("x", "y")
+        )
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        sub_a = data_api.subscribe(
+            sources=GAUSS_KEYS,
+            scan="scan_1",
+            callback=lambda _: None,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        sent = [partial_msg("x", i) for i in range(5)] + [partial_msg("y", i) for i in range(3)]
+        for message in sent:
+            feed.callback({"data": message})
+        assert feed.cut
+        monkeypatch.setattr(
+            mock_client.connector, "xrange", lambda *a, **k: [{"data": m} for m in sent]
+        )
+        ups_b = []
+        sub_b = data_api.subscribe(
+            sources=GAUSS_KEYS, scan="scan_1", callback=ups_b.append, update_rate=None
+        )
+        join_catch_up(sub_b)
+        feed.callback({"data": partial_msg("y", 3)})  # below the last index read of x
+        feed.callback({"data": sent[4]})  # read already: not a second time
+        feed.callback({"data": partial_msg("x", 5)})
+        assert tuple(ups_b[-1].get("gauss", "gauss_data_x").ordinals) == tuple(range(6))
+        assert tuple(ups_b[-1].get("gauss", "gauss_data_y").ordinals) == tuple(range(4))
         sub_a.close()
         sub_b.close()
 
