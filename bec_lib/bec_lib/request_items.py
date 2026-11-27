@@ -6,11 +6,12 @@ about a scan request. The RequestStorage class is used to store request items.
 from __future__ import annotations
 
 import threading
-from collections import deque
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 from bec_lib.callback_handler import CallbackHandler
 from bec_lib.logger import bec_logger
+from bec_lib.scan_queue_cache import ScanQueueCache
 
 logger = bec_logger.logger
 
@@ -111,17 +112,51 @@ class RequestStorage:
     """stores request items"""
 
     def __init__(self, scan_manager: ScanManager, maxlen=100) -> None:
-        self.storage: deque[RequestItem] = deque(maxlen=maxlen)
+        self._cache = ScanQueueCache[RequestItem](maxlen, key=lambda item: item.requestID)
+        self._pending: OrderedDict[str, RequestItem] = OrderedDict()
+        self.storage = self._cache
         self._lock = threading.RLock()
         self.scan_manager = scan_manager
 
     def find_request_by_ID(self, requestID: str) -> RequestItem | None:
         """find a request item based on its requestID"""
         with self._lock:
-            for request in self.storage:
-                if request.requestID == requestID:
-                    return request
-            return None
+            return self._cache.get(requestID) or self._pending.get(requestID)
+
+    def update_with_queue_status(self, queue_msg: messages.ScanQueueStatusMessage) -> None:
+        """Update live and completed requests from the server queue."""
+        with self._lock:
+            self._cache.retain(
+                (
+                    block.RID
+                    for queue in queue_msg.queue.values()
+                    for item in queue.info
+                    for block in item.request_blocks
+                ),
+                result_ids=(
+                    block.RID
+                    for queue in queue_msg.queue.values()
+                    for item in queue.info
+                    for block in item.request_blocks
+                    if item.status not in {"PENDING", "CANCELLED"}
+                ),
+            )
+
+            for queue in queue_msg.queue.values():
+                for entry in queue.info:
+                    for block in entry.request_blocks:
+                        pending = self._pending.pop(block.RID, None)
+                        if pending is not None:
+                            self._cache.append(pending)
+
+    def _store_pending(self, item: RequestItem) -> None:
+        if self._cache.is_live(item.requestID):
+            self._cache.append(item)
+            return
+        self._pending[item.requestID] = item
+        maxlen = self._cache.maxlen
+        if maxlen is not None and len(self._pending) > maxlen:
+            self._pending.popitem(last=False)
 
     def update_with_response(self, response_msg: messages.RequestResponseMessage) -> None:
         """create or update request item based on a new RequestResponseMessage"""
@@ -132,7 +167,7 @@ class RequestStorage:
                 logger.trace("Scan queue request exists. Updating with response.")
                 return
 
-            self.storage.append(RequestItem.from_response(self.scan_manager, response_msg))
+            self._store_pending(RequestItem.from_response(self.scan_manager, response_msg))
 
     def update_with_request(self, request_msg: messages.ScanQueueMessage) -> None:
         """create or update request item based on a new ScanQueueMessage (i.e. request message)"""
@@ -148,5 +183,5 @@ class RequestStorage:
                 request_item.update_with_request(request_msg)
                 return
 
-            self.storage.append(RequestItem.from_request(self.scan_manager, request_msg))
+            self._store_pending(RequestItem.from_request(self.scan_manager, request_msg))
             return

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import functools
 import threading
-from collections import deque
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -14,6 +13,7 @@ from rich.table import Table
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.scan_queue_cache import ScanQueueCache
 from bec_lib.utils import threadlocked
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -145,11 +145,14 @@ class QueueItem:
     @threadlocked
     def update_queue_item(self, queue_item: messages.QueueInfoEntry):
         """update the queue item"""
-        self.request_blocks = queue_item.request_blocks
         self._status = queue_item.status
-        self.active_request_block = queue_item.active_request_block
-        self.scan_ids = queue_item.scan_id
         self.reason = queue_item.reason
+        self.active_request_block = queue_item.active_request_block
+        if queue_item.status == "STOPPED" and not queue_item.request_blocks:
+            # The worker clears its stopped request before the queue removes the entry.
+            return
+        self.request_blocks = queue_item.request_blocks
+        self.scan_ids = queue_item.scan_id
 
     def update_with_client_message(self, message: messages.ClientInfoMessage):
         """append a client message to the queue item"""
@@ -199,7 +202,9 @@ class QueueStorage:
     """stores queue items"""
 
     def __init__(self, scan_manager: ScanManager, maxlen=100) -> None:
-        self.storage: deque[QueueItem] = deque(maxlen=maxlen)
+        self._cache = ScanQueueCache[QueueItem](maxlen, key=lambda item: item.queue_id)
+        self.storage = self._cache
+        self._request_queue_ids: dict[str, str] = {}
         self._lock = threading.RLock()
         self.scan_manager = scan_manager
         self.current_scan_queue: dict[str, messages.ScanQueueStatus] | None = None
@@ -283,6 +288,15 @@ class QueueStorage:
     def update_with_status(self, queue_msg: messages.ScanQueueStatusMessage) -> None:
         """update a queue item with a new ScanQueueStatusMessage / queue message"""
         self.current_scan_queue = queue_msg.queue
+        self._cache.retain(
+            (item.queue_id for queue in queue_msg.queue.values() for item in queue.info),
+            result_ids=(
+                item.queue_id
+                for queue in queue_msg.queue.values()
+                for item in queue.info
+                if item.status not in {"PENDING", "CANCELLED"}
+            ),
+        )
         self._update_queue_history()
         for queue in queue_msg.queue.values():
             queue_info = queue.info
@@ -291,7 +305,7 @@ class QueueStorage:
                 if queue:
                     queue.update_queue_item(queue_item)
                     continue
-                self.storage.append(
+                self._cache.append(
                     QueueItem(
                         scan_manager=self.scan_manager,
                         queue_id=queue_item.queue_id,
@@ -306,26 +320,40 @@ class QueueStorage:
                     # evicting too many items just because of a large queue
                     break
 
+        self._request_queue_ids = {
+            block.RID: item.queue_id for item in self._cache for block in item.request_blocks
+        }
+        live_requests = {}
+        active_requests = {}
+        # Prefer live entries over history, and running replacements over stopped attempts.
+        for status in queue_msg.queue.values():
+            for entry in status.info:
+                if self._cache.get(entry.queue_id) is None:
+                    continue
+                for block in entry.request_blocks:
+                    live_requests.setdefault(block.RID, entry.queue_id)
+                    if entry.status not in {"COMPLETED", "STOPPED", "CANCELLED"}:
+                        active_requests.setdefault(block.RID, entry.queue_id)
+        self._request_queue_ids.update(live_requests)
+        self._request_queue_ids.update(active_requests)
+
     @threadlocked
     def find_queue_item_by_ID(self, queue_id: str) -> QueueItem | None:
         """find a queue item based on its queue_id"""
-        for queue_item in self.storage:
-            if queue_item.queue_id == queue_id:
-                return queue_item
-        return None
+        return self._cache.get(queue_id)
 
     @threadlocked
     def find_queue_item_by_requestID(self, requestID: str) -> QueueItem | None:
         """find a queue item based on its requestID"""
-        for queue_item in self.storage:
-            if requestID in queue_item.requestIDs:
-                return queue_item
-        return None
+        queue_id = self._request_queue_ids.get(requestID)
+        if queue_id is None:
+            return None
+        return self._cache.get(queue_id)
 
     @threadlocked
     def find_queue_item_by_scan_id(self, scan_id: str) -> QueueItem | None:
         """find a queue item based on its scan_id"""
-        for queue_item in self.storage:
+        for queue_item in self._cache:
             if scan_id in queue_item.scans:
                 return queue_item
         return None

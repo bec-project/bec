@@ -69,6 +69,7 @@ class ScanManager:
 
     def update_with_queue_status(self, queue: messages.ScanQueueStatusMessage) -> None:
         """update storage with a new queue status message"""
+        self.request_storage.update_with_queue_status(queue)
         self.queue_storage.update_with_status(queue)
         self.scan_storage.update_with_queue_status(queue)
 
