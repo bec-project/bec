@@ -1235,6 +1235,28 @@ class TestAxisModes:
         assert len(feed.log) < 8  # gone through whenever it has doubled
         sub.close()
 
+    def test_feed_log_drops_late_fragments_of_a_dropped_row(self, data_api, mock_client):
+        """Fragments of a row no request holds any more are dropped also while no new row comes."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=updates.append,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        rows = [100, *range(100), *[0] * 1000]  # then late fragments of row 0, long dropped
+        for count, row in enumerate(rows):
+            feed.callback({"data": async_msg("wave", [row], count, "add_slice", slice_index=row)})
+        assert tuple(updates[-1].get("det", "wave").ordinals) == (99, 100)
+        assert len(feed.log) < 8  # gone through whenever it has doubled
+        sub.close()
+
     def test_feed_log_is_cut_for_each_signal_of_a_stream(self, data_api, mock_client, monkeypatch):
         """
         A signal that is sent rarely must not keep every message of a fast one in the log,

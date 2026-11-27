@@ -107,9 +107,7 @@ class _Feed:
     trimmed: bool = False
     #: Whether the log was cut to what its requests hold: the stream in Redis may hold more.
     cut: bool = False
-    #: Per signal, the first point the requests held when the whole log was last gone through.
-    held: dict[str, int] = field(default_factory=dict)
-    #: The length the log had after that.
+    #: The length the log had after the whole log was last gone through.
     swept: int = 0
 
     def messages(self) -> list[DeviceMessage]:
@@ -486,13 +484,13 @@ class RedisDataPath(DataPath):
         while feed.log and self._below(self._points(feed.log[0]), held):
             feed.log.popleft()
             dropped = True
-        if not dropped and held != feed.held and len(feed.log) >= max(2 * feed.swept, 8):
+        if not dropped and len(feed.log) >= max(2 * feed.swept, 8):
             # A held point can lead the log: rows arrive out of order, signals at their own pace.
             # The whole log is gone through only once it has doubled, so the cost stays linear.
             kept = [m for m in feed.log if not self._below(self._points(m), held)]
             dropped = len(kept) < len(feed.log)
             feed.log = collections.deque(kept)
-            feed.held, feed.swept = held, len(kept)
+            feed.swept = len(kept)
         feed.cut = feed.cut or dropped
 
     @staticmethod
