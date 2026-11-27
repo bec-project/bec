@@ -17,6 +17,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.device import OnFailure, RPCError
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import MessageObject
 from bec_lib.service_config import ServiceConfig
@@ -198,7 +199,8 @@ def test_shutdown_joins_ophyd_callback_monitor_first(device_server_mock, shutdow
             raise RuntimeError("Service shutdown failed")
 
     with mock.patch(
-        "bec_server.device_server.device_server.BECService.shutdown", side_effect=shutdown_service
+        "bec_server.device_server.device_server.BECService._shutdown_service",
+        side_effect=shutdown_service,
     ):
         if shutdown_fails:
             with pytest.raises(RuntimeError, match="Service shutdown failed"):
@@ -215,6 +217,52 @@ def test_shutdown_without_starting_ophyd_callback_monitor(device_server_mock):
 
     assert device_server_mock.ophyd_callback_monitor._stop_event.is_set()
     assert device_server_mock.ophyd_callback_monitor._thread is None
+
+
+@pytest.mark.parametrize("teardown_raises", [False, True])
+def test_shutdown_preserves_disconnect_errors_until_final_cleanup(
+    device_server_mock, tmp_path, monkeypatch, capfd, teardown_raises
+):
+    server = device_server_mock
+    bec_logger.shutdown()
+    monkeypatch.setattr(bec_logger, "_base_path", tmp_path)
+    bec_logger.configure(["localhost:1"], "DeviceServer", connector=server.connector)
+    worker = bec_logger._log_thread
+    manager = DeviceManagerDS.__new__(DeviceManagerDS)
+    manager.connector = server.connector
+    manager._shutdown_event = threading.Event()
+    manager._auto_monitor_update_thread = mock.Mock()
+    manager._auto_monitor_update_thread.is_alive.return_value = False
+    manager.devices = mock.MagicMock()
+    manager.devices.values.return_value = [SimpleNamespace(name="mock_device", obj=object())]
+    manager.disconnect_device = mock.Mock(side_effect=RuntimeError("disconnect failed"))
+    manager.config_update_handler = None
+    if teardown_raises:
+        manager.devices.flush.side_effect = RuntimeError("cleanup failed")
+
+    def close_connector(*args, **kwargs):
+        assert not worker.is_alive()
+        # Local logging must still be available when the connector closes.
+        assert bec_logger.logger._core.handlers
+
+    try:
+        with (
+            mock.patch.object(server, "device_manager", manager),
+            mock.patch.object(server.connector, "shutdown", side_effect=close_connector),
+        ):
+            if teardown_raises:
+                with pytest.raises(RuntimeError, match="cleanup failed"):
+                    server.shutdown()
+            else:
+                server.shutdown()
+    finally:
+        manager.devices.flush.side_effect = None
+
+    message = "Failed to disconnect device mock_device:"
+    assert message in (tmp_path / "DeviceServer.log").read_text()
+    assert message in capfd.readouterr().err
+    manager.disconnect_device.assert_called_once()
+    assert not bec_logger.logger._core.handlers
 
 
 def test_shutdown_closes_connector_before_joining_blocked_warning(device_server_mock):

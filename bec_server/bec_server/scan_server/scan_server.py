@@ -127,9 +127,15 @@ class ScanServer(BECService):
         self.scan_number_container.dataset_number = val
 
     def shutdown(self, per_thread_timeout_s: float | None = None) -> None:
-        """shutdown the scan server"""
-        self.builtin_actor_manager.shutdown()
-        self.actor_manager.shutdown()
-        self.proc_manager.shutdown()
-        self.device_manager.shutdown()
-        self.queue_manager.shutdown()
+        """Stop scan work and flush logs before closing the shared connector."""
+        try:
+            try:
+                self.builtin_actor_manager.shutdown()
+                self.actor_manager.shutdown()
+                self.proc_manager.shutdown()
+                self.queue_manager.shutdown()
+            finally:
+                super()._shutdown_service(per_thread_timeout_s)
+            self.device_manager.shutdown()
+        finally:
+            self._shutdown_logger()

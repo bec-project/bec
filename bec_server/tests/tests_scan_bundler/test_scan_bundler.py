@@ -5,9 +5,67 @@ import pytest
 from bec_lib import messages
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
+from bec_lib.tests.utils import ConnectorMock
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("owns_logger", [True, False])
+def test_shutdown_flushes_only_owned_logger_before_connector_close(
+    scan_bundler_mock, monkeypatch, owns_logger
+):
+    sb = scan_bundler_mock
+    # Production device managers share the service connector; the fixture's does not.
+    monkeypatch.setattr(sb.device_manager, "connector", sb.connector)
+    bec_logger.shutdown()
+    log_connector = sb.connector if owns_logger else ConnectorMock()
+    bec_logger.configure(
+        sb.bootstrap_server,
+        service_name="ScanBundler" if owns_logger else "OtherService",
+        connector=log_connector,
+        service_config=sb._service_config.config,
+    )
+    worker = bec_logger._log_thread
+    stop_event = bec_logger._log_event
+    emitter_workers = [emi._buffered_connector_thread for emi in sb._emitter]
+    published = []
+
+    def publish_pipeline(pipe):
+        published.extend(
+            args[1]["data"] for method, args, _ in pipe._pipe_buffer if method == "xadd"
+        )
+
+    def close_connector(*args, **kwargs):
+        if owns_logger:
+            assert not worker.is_alive()
+            assert not bec_logger._configured
+            assert any(
+                msg.log_msg["record"]["message"] == "pending at ScanBundler shutdown"
+                for msg in published
+            )
+        else:
+            assert worker.is_alive()
+            assert not stop_event.is_set()
+            assert bec_logger._configured
+
+    with (
+        mock.patch.object(log_connector, "execute_pipeline", side_effect=publish_pipeline),
+        mock.patch.object(sb.connector, "shutdown", side_effect=close_connector) as close,
+    ):
+        bec_logger.logger.error("pending at ScanBundler shutdown")
+        sb.shutdown()
+        close.assert_called()
+
+    # Check the service's result before the autouse fixture stops the logger.
+    assert worker.is_alive() is not owns_logger
+    assert stop_event.is_set() is owns_logger
+    assert sb._service_info_event.is_set()
+    assert sb._metrics_emitter_event.is_set()
+    assert all(not thread.is_alive() for thread in emitter_workers)
+    with pytest.raises(RuntimeError, match="cannot schedule new futures after shutdown"):
+        sb.executor.submit(lambda: None)
 
 
 @pytest.fixture()
