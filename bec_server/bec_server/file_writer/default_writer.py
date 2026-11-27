@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 
+from .async_writer import WrittenAsyncSignal
 from .merged_dicts import dict_to_storage, merge_dicts
 
 if TYPE_CHECKING:
@@ -16,6 +17,9 @@ if TYPE_CHECKING:
 class DefaultFormat:
     """
     Default NeXus file format.
+
+    `written_async_signals` maps device names to lists of WrittenAsyncSignal dataclasses.
+    A None shape indicates that no value dataset was written.
     """
 
     def __init__(
@@ -28,7 +32,7 @@ class DefaultFormat:
         beamline_states: dict[str, list[messages.BeamlineStateMessage]],
         device_manager: DeviceManagerBase,
         additional_scan_metadata: AdditionalScanMetadata,
-        written_async_signals: dict[str, list[str]] | None = None,
+        written_async_signals: dict[str, list[WrittenAsyncSignal]] | None = None,
     ):
         self.storage = storage
         self.data = data
@@ -92,7 +96,10 @@ class DefaultFormat:
             bool: True if the device was written with the given async signal, False otherwise.
         """
         if self.written_async_signals is not None:
-            return signal_name in self.written_async_signals.get(device_name, [])
+            return any(
+                signal.name == signal_name
+                for signal in self.written_async_signals.get(device_name, [])
+            )
 
         return False
 
@@ -336,14 +343,22 @@ class DefaultFormat:
         """
         Check whether two scan report devices have compatible value shapes for NXdata.
         """
-        reference_value = self.get_entry(reference_device)
-        candidate_value = self.get_entry(candidate_device)
-        if reference_value is None or candidate_value is None:
-            return False
+        reference_shape = self._get_device_shape(reference_device)
+        return reference_shape is not None and reference_shape == self._get_device_shape(
+            candidate_device
+        )
+
+    def _get_device_shape(self, device: str) -> tuple[int, ...] | None:
+        for signal in (self.written_async_signals or {}).get(device, []):
+            if signal.name == device and signal.shape is not None:
+                return signal.shape
+        value = self.get_entry(device)
+        if value is None:
+            return None
         try:
-            return np.asarray(reference_value).shape == np.asarray(candidate_value).shape
+            return np.asarray(value).shape
         except Exception:
-            return False
+            return None
 
     def _write_scan_report_data(self, entry: HDF5Storage) -> None:
         """

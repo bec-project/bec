@@ -7,6 +7,7 @@ from __future__ import annotations
 import threading
 import traceback
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import h5py
@@ -22,6 +23,17 @@ logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.redis_connector import RedisConnector
+
+
+@dataclass(frozen=True)
+class WrittenAsyncSignal:
+    """An async signal's destination name and stored value shape.
+
+    A None shape means that no value dataset has been written yet.
+    """
+
+    name: str
+    shape: tuple[int, ...] | None
 
 
 def create_dataset_safe(group: h5py.Group, name: str, data: Any, **kwargs) -> h5py.Dataset:
@@ -108,20 +120,24 @@ class AsyncWriter(threading.Thread):
         self.device_data_replace = {}
         self.append_shapes = {}
         self.written_devices = set()
-        self._written_signals = defaultdict(set)
+        self._written_signals: dict[str, dict[str, WrittenAsyncSignal]] = defaultdict(dict)
         self._unwritable_signals = set()
         self.file_handle = None
         self.cursor = defaultdict(dict)
         self.error_info: messages.ErrorInfo | None = None
+        self.aliased_signals: dict[tuple[str, str], str] = {}
 
     @property
-    def written_signals(self) -> dict[str, list[str]]:
+    def written_signals(self) -> dict[str, list[WrittenAsyncSignal]]:
         """
-        Return the async signals that were written, grouped by device.
+        Return signal names and stored value shapes, grouped by device.
+
+        A None shape indicates that no value dataset has been written yet.
+        Deferred replace updates receive their shape when flushed at scan completion.
         """
         return {
-            device_name: sorted(signal_names)
-            for device_name, signal_names in self._written_signals.items()
+            device_name: [signals[name] for name in sorted(signals)]
+            for device_name, signals in self._written_signals.items()
         }
 
     def initialize_stream_keys(self):
@@ -134,12 +150,25 @@ class AsyncWriter(threading.Thread):
             ).endpoint
             key = "0-0"
             self.stream_keys[topic] = key
-        for device_name, component_name, signal_info in self.async_signals:
-            saved = signal_info.get("describe", {}).get("signal_info", {}).get("saved", False)
-            if not saved:
+        for device_name, _, info in self.async_signals:
+            signal_info = info.get("describe", {}).get("signal_info", {})
+            if not signal_info.get("saved", False):
                 continue
+
+            obj_name = info.get("obj_name")
+            storage_name = info["storage_name"]
+            aliases = signal_info.get("aliases")
+            if (
+                obj_name is not None
+                and signal_info.get("use_alias", False)
+                and isinstance(aliases, dict)
+            ):
+                source_key = obj_name.removeprefix(f"{storage_name}_")
+                target = aliases.get(source_key)
+                if target and target != obj_name:
+                    self.aliased_signals[device_name, obj_name] = target
             topic = MessageEndpoints.device_async_signal(
-                scan_id=self.scan_id, device=device_name, signal=signal_info["storage_name"]
+                scan_id=self.scan_id, device=device_name, signal=storage_name
             ).endpoint
             key = "0-0"
             self.stream_keys[topic] = key
@@ -292,14 +321,15 @@ class AsyncWriter(threading.Thread):
                 async_update = msg.metadata["async_update"]
 
                 for signal_name, signal_data in signals.items():
+                    target = self.aliased_signals.get((device_name, signal_name), signal_name)
                     # create the device signal group if it doesn't exist
-                    # -> /entry/collections/devices/<device_name>/<signal_name>
-                    if signal_name not in device_group:
-                        signal_group = device_group.create_group(signal_name)
+                    # -> /entry/collection/devices/<device_name>/<target>
+                    if target not in device_group:
+                        signal_group = device_group.create_group(target)
                         signal_group.attrs["NX_class"] = "NXdata"
                         signal_group.attrs["signal"] = "value"
                     else:
-                        signal_group = device_group[signal_name]
+                        signal_group = device_group[target]
 
                     # The value goes first: an update that is rejected leaves no timestamp behind.
                     try:
@@ -336,12 +366,22 @@ class AsyncWriter(threading.Thread):
                                 info=error_info,
                                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                             )
-                    self._written_signals[device_name].add(signal_name)
+                    dataset = signal_group.get("value")
+                    self._written_signals[device_name][target] = WrittenAsyncSignal(
+                        name=target,
+                        shape=dataset.shape if isinstance(dataset, h5py.Dataset) else None,
+                    )
 
         if write_replace:
             for group_name, value in self.device_data_replace.items():
                 group = f[group_name]
-                create_dataset_safe(group, "value", data=value, maxshape=value.shape)
+                dataset = create_dataset_safe(group, "value", data=value, maxshape=value.shape)
+                device_name, signal_name = group_name.removeprefix(f"{self.BASE_PATH}/").split(
+                    "/", 1
+                )
+                self._written_signals[device_name][signal_name] = WrittenAsyncSignal(
+                    name=signal_name, shape=dataset.shape
+                )
 
         f.flush()
 

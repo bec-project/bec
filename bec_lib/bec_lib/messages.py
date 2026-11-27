@@ -1169,7 +1169,13 @@ class SignalInfo(BaseModel):
         exclude=True,
     )
     use_alias: bool = Field(
-        default=False, description="Whether the signal aliases one or more EPICS signals."
+        default=False, description="Whether the signal aliases one or more normal signals."
+    )
+
+    aliases: dict[str, str] | None = Field(
+        default=None,
+        description="Mapping from each aliased source name in `signals` to its target signal. "
+        "To disable aliasing for a scan, set `use_alias` to False.",
     )
 
     transports: list[SignalTransport] | None = Field(
@@ -1201,6 +1207,21 @@ class SignalInfo(BaseModel):
     def synchronize_acquisition_group(self) -> Self:
         """Keep the deprecated attribute synchronized with the canonical value."""
         self.__dict__["acquisition_group"] = self.correlation_group
+        return self
+
+    @model_validator(mode="after")
+    def validate_aliases(self) -> Self:
+        """Validate alias source names against the declared signals."""
+        if self.aliases is None:
+            return self
+
+        signal_names = {name for name, _ in self.signals or ()}
+        for source_name in self.aliases:
+            if source_name not in signal_names:
+                raise ValueError(
+                    f"Alias source '{source_name}' is not a declared signal. "
+                    f"Valid signal names are: {sorted(signal_names)}"
+                )
         return self
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -1621,23 +1642,6 @@ class FileMessage(BECMessage):
     device_name: str | list[str] | None = Field(default=None)
     file_type: str = "h5"
     hinted_h5_entries: dict[str, str] | None = None
-
-
-class FileContentMessage(BECMessage):
-    """File content message to inform about the content of a file
-
-    Args:
-        file_path (str): Path to the file.
-        data (str): Content of the file.
-        scan_info (dict): Scan information.
-        metadata (dict, optional): Status metadata. Defaults to None.
-
-    """
-
-    msg_type: ClassVar[str] = "file_content_message"
-    file_path: str
-    data: dict
-    scan_info: dict
 
 
 class StorageCopyRequestMessage(BECMessage):

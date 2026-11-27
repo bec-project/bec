@@ -9,6 +9,7 @@ from test_file_writer_manager import file_writer_manager_mock
 from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.file_writer import HDF5FileWriter
+from bec_server.file_writer.async_writer import AsyncWriter, WrittenAsyncSignal
 from bec_server.file_writer.default_writer import DefaultFormat
 from bec_server.file_writer.file_writer import (
     AdditionalScanMetadata,
@@ -304,7 +305,7 @@ def test_has_async_signal_returns_false_without_written_async_signals(default_fo
 
 
 def test_has_async_signal_uses_written_async_signals_when_provided(default_format):
-    default_format.written_async_signals = {"waveform": ["waveform_data"]}
+    default_format.written_async_signals = {"waveform": [WrittenAsyncSignal("waveform_data", (8,))]}
 
     with mock.patch.object(
         default_format.device_manager, "get_bec_signals"
@@ -897,10 +898,216 @@ def test_hdf5_writer_forwards_written_async_signals(tmp_path, hdf5_file_writer, 
             f"{tmp_path}/test.h5",
             scan_storage_mock,
             configuration_data={},
-            written_async_signals={"waveform": ["waveform_data"]},
+            written_async_signals={"waveform": [WrittenAsyncSignal("waveform_data", (8,))]},
         )
 
-    assert CapturingFormatForTest.last_written_async_signals == {"waveform": ["waveform_data"]}
+    assert CapturingFormatForTest.last_written_async_signals == {
+        "waveform": [WrittenAsyncSignal("waveform_data", (8,))]
+    }
+
+
+def test_async_aliases_replace_the_target_readings(tmp_path, hdf5_file_writer, scan_storage_mock):
+    source_to_target = {
+        "cam_analysis_buffered": "cam_analysis_reading",
+        "cam_analysis_stats_mean": "cam_analysis_mean",
+        "cam_analysis_stats_std": "cam_analysis_deviation",
+    }
+    stats_aliases = {"mean": "cam_analysis_mean", "std": "cam_analysis_deviation"}
+    aliases = [
+        (
+            "analysis.buffered",
+            "analysis.buffered",
+            "cam_analysis_buffered",
+            {"cam_analysis_buffered": "cam_analysis_reading"},
+        ),
+        ("analysis.stats.mean", "analysis.stats", "cam_analysis_stats_mean", stats_aliases),
+        ("analysis.stats.std", "analysis.stats", "cam_analysis_stats_std", stats_aliases),
+    ]
+    writer = AsyncWriter(
+        tmp_path / "scan.h5",
+        "scan_id",
+        1,
+        hdf5_file_writer.file_writer_manager.connector,
+        devices=[],
+        async_signals=[
+            (
+                "cam",
+                component,
+                {
+                    "component_name": parent,
+                    "storage_name": f"cam_{parent.replace('.', '_')}",
+                    "obj_name": source,
+                    "describe": {
+                        "signal_info": {"saved": True, "use_alias": True, "aliases": mapping}
+                    },
+                },
+            )
+            for component, parent, source, mapping in aliases
+        ],
+    )
+
+    scan_storage_mock.scan_segments = {
+        0: {
+            "cam": {
+                "cam_analysis_reading": {"value": 100, "timestamp": 10},
+                "cam_other": {"value": 5, "timestamp": 10},
+            }
+        }
+    }
+    writer.initialize_stream_keys()
+    message = messages.DeviceMessage(
+        signals={
+            source: {"value": [index, index + 1], "timestamp": index}
+            for index, source in enumerate(source_to_target)
+        },
+        metadata={"async_update": {"type": "add", "max_shape": [None]}},
+    )
+    writer.write_data({"cam": [message]}, write_replace=True)
+    assert writer.written_signals == {
+        "cam": [WrittenAsyncSignal(target, (2,)) for target in sorted(source_to_target.values())]
+    }
+    with mock.patch("bec_server.file_writer.file_writer.logger.error") as error:
+        hdf5_file_writer.write(
+            writer.file_path,
+            scan_storage_mock,
+            configuration_data={},
+            file_handle=writer.file_handle,
+            written_async_signals=writer.written_signals,
+        )
+    error.assert_not_called()
+
+    with h5py.File(writer.tmp_file_path) as file:
+        group = file[f"{writer.BASE_PATH}/cam"]
+        assert set(group) == {*source_to_target.values(), "cam_other"}
+        for index, target in enumerate(source_to_target.values()):
+            np.testing.assert_array_equal(group[f"{target}/value"][:], [index, index + 1])
+            np.testing.assert_array_equal(group[f"{target}/timestamp"][:], [index])
+        np.testing.assert_array_equal(group["cam_other/value"][:], [5])
+
+
+@pytest.mark.parametrize(
+    "async_reading",
+    [
+        None,
+        {"timestamp": 11},
+        {"value": [10, 20]},
+        {"value": [10, 20], "timestamp": 11},
+        {"value": [10, 20, 30], "timestamp": 11},
+    ],
+)
+def test_async_alias_preserves_units_and_scan_report(
+    tmp_path, hdf5_file_writer, scan_storage_mock, async_reading
+):
+    manager = hdf5_file_writer.file_writer_manager
+    manager.device_manager = mock.Mock(
+        devices={"samx": mock.Mock(_info={"describe": {"samx": {"units": "mm"}}})}
+    )
+    scan_storage_mock.metadata["scan_report_devices"] = ["samx", "samy"]
+    scan_storage_mock.scan_segments = {
+        i: {name: {name: {"value": i, "timestamp": i + 1}} for name in ("samx", "samy")}
+        for i in range(2)
+    }
+    writer = AsyncWriter(
+        tmp_path / "scan.h5", "scan_id", 1, manager.connector, devices=[], async_signals=[]
+    )
+    writer.aliased_signals["samx", "samx_buffered"] = "samx"
+    signals = {"samx_other": {"value": [5], "timestamp": 10}}
+    if async_reading is not None:
+        signals["samx_buffered"] = async_reading
+    writer.write_data(
+        {
+            "samx": [
+                messages.DeviceMessage(
+                    signals=signals, metadata={"async_update": {"type": "replace"}}
+                )
+            ]
+        },
+        write_replace=True,
+    )
+    with mock.patch("bec_server.file_writer.file_writer.logger.error") as error:
+        hdf5_file_writer.write(
+            writer.file_path,
+            scan_storage_mock,
+            configuration_data={"samx": {"samx": {"value": 42, "timestamp": 12}}},
+            file_handle=writer.file_handle,
+            written_async_signals=writer.written_signals,
+        )
+    error.assert_not_called()
+    with h5py.File(writer.tmp_file_path) as file:
+        readback = file["entry/collection/devices/samx/samx"]
+        async_values = (async_reading or {}).get("value")
+        expected = [0, 1] if async_values is None else async_values
+        np.testing.assert_array_equal(readback["value"][:], expected)
+        if async_values is None:
+            np.testing.assert_array_equal(readback["timestamp"][:], [1, 2])
+        elif "timestamp" in async_reading:
+            np.testing.assert_array_equal(readback["timestamp"][:], [11])
+        else:
+            assert "timestamp" not in readback
+        assert readback["value"].attrs["units"] == "mm"
+        assert file["entry/data/samx"] == readback["value"]
+        assert ("samy" in file["entry/data"]) == (len(expected) == 2)
+        assert file["entry/collection/configuration/samx/samx/value"][()] == 42
+
+
+def test_independent_plugin_receives_async_shapes(tmp_path, hdf5_file_writer):
+    captured = {}
+
+    class IndependentFormat:
+        def __init__(
+            self,
+            storage,
+            data,
+            info_storage,
+            configuration,
+            file_references,
+            beamline_states,
+            device_manager,
+            additional_scan_metadata,
+            written_async_signals=None,
+        ):
+            captured["readings"] = data
+            captured["shape"] = written_async_signals["samx"][0].shape
+            self.storage = storage
+            storage.create_group("entry").create_group("collection").create_group("devices")
+
+        def get_storage_format(self):
+            return self.storage._storage
+
+    scan = ScanStorage(1, "scan")
+    scan.metadata = {"readout_priority": {}}
+    scan.baseline = {"samx": {"samx": {"value": 1, "timestamp": 2}}}
+    with h5py.File(tmp_path / "scan.tmp", "w") as file:
+        file.create_dataset("entry/collection/devices/samx/samx/value", data=[10, 20])
+        with mock.patch(
+            "bec_lib.plugin_helper.get_file_writer_plugins",
+            return_value={"test": IndependentFormat},
+        ):
+            hdf5_file_writer.write(
+                str(tmp_path / "scan.h5"),
+                scan,
+                configuration_data={},
+                file_handle=file,
+                written_async_signals={"samx": [WrittenAsyncSignal("samx", (2,))]},
+            )
+    assert captured["shape"] == (2,)
+    assert captured["readings"] == scan.baseline
+
+
+def test_async_metadata_with_slash_qualified_group(tmp_path):
+    storage = HDF5Storage()
+    signal = storage.create_group("entry/collection/devices/cam/cam")
+    signal.create_dataset("value", [0, 1]).attrs["units"] = "mm"
+    signal.create_dataset("timestamp", [1, 2])
+    with h5py.File(tmp_path / "scan.h5", "w") as file:
+        file.create_dataset("entry/collection/devices/cam/cam/value", data=[10, 20])
+        file.create_dataset("entry/collection/devices/cam/cam/timestamp", data=[11])
+        with mock.patch("bec_server.file_writer.file_writer.logger.error") as error:
+            HDF5StorageWriter.write(storage._storage, file)
+        error.assert_not_called()
+        np.testing.assert_array_equal(file["entry/collection/devices/cam/cam/value"][:], [10, 20])
+        np.testing.assert_array_equal(file["entry/collection/devices/cam/cam/timestamp"][:], [11])
+        assert file["entry/collection/devices/cam/cam/value"].attrs["units"] == "mm"
 
 
 @pytest.mark.parametrize(
