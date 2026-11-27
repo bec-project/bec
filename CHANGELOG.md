@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.12.2 (2026-11-27)
+
+### Bug Fixes
+
+- **scan_manager**: Load the stored scan state when the client starts
+  ([`ea86d24`](https://github.com/bec-project/bec/commit/ea86d24050afd74fed6e5eee5ba3ef7d20a41d24))
+
+
 ## v4.12.1 (2026-11-27)
 
 ### Bug Fixes
