@@ -1551,6 +1551,65 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
+    def test_state_read_from_the_stream_is_not_replaced_by_an_older_one_of_the_feed(
+        self, data_api, mock_client, monkeypatch
+    ):
+        """
+        A later request that reads the stream gets the newest state of a replace signal, also
+        when that state is in Redis but not delivered through the feed yet.
+        """
+        mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(
+            "det", "data", ("a", "b")
+        )
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        keys = [("det", "data_a"), ("det", "data_b")]
+        sub_a = data_api.subscribe(
+            sources=keys,
+            scan="scan_1",
+            callback=lambda _: None,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        added = [
+            messages.DeviceMessage(
+                signals={"data_a": {"value": [index], "timestamp": 1.0}},
+                metadata={
+                    "async_indices": {"data_a": index},
+                    "async_update": messages.DeviceAsyncUpdate(
+                        type="add", max_shape=[None]
+                    ).model_dump(),
+                },
+            )
+            for index in range(10)
+        ]
+        for message in [*added, self._replace_message(10, data_b=[10])]:
+            feed.callback({"data": message})
+        assert feed.cut  # the later request reads the stream
+        stream = [*added, self._replace_message(10, data_b=[10])]
+        newer = self._replace_message(11, data_b=[11])  # in Redis, not delivered yet
+        stream.append(newer)
+        monkeypatch.setattr(
+            mock_client.connector,
+            "get_last",
+            lambda *_a, count=1, **_k: [{"data": m} for m in stream][-count:],
+        )
+        monkeypatch.setattr(
+            mock_client.connector, "xrange", lambda *_a, **_k: [{"data": m} for m in stream]
+        )
+        ups_b = []
+        sub_b = data_api.subscribe(
+            sources=keys, scan="scan_1", callback=ups_b.append, update_rate=None, max_buffer_size=50
+        )
+        join_catch_up(sub_b)
+        assert list(ups_b[-1].get("det", "data_b").as_array()) == [11]
+        feed.callback({"data": newer})  # delivered now: read already
+        assert list(ups_b[-1].get("det", "data_b").as_array()) == [11]
+        sub_a.close()
+        sub_b.close()
+
     def test_feed_log_replays_overlapping_replace_messages_in_order(self, data_api, mock_client):
         """A message that is partly replaced still holds the state of its other signals."""
         sub_a, feed, ups_a = self._replace_feed_of_two_signals(data_api, mock_client)

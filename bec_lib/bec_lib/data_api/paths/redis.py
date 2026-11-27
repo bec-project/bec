@@ -379,12 +379,16 @@ class RedisDataPath(DataPath):
     def _replay(
         self, request: SourceRequest, spec: SourceSpec, messages: list[DeviceMessage], trimmed: bool
     ) -> None:
-        """Ingest the messages a request catches up from, then the replace states. Lock held."""
+        """Ingest the replace states of the feed, then the messages a request catches up from.
+
+        Every delivered message is in the stream, so what the stream gives of a replace signal
+        is at least as new as the state the feed kept: the state goes first. Lock held.
+        """
         key = self._async_feed_key(request.scan_id, spec)
         feed = self._feeds[key]  # held by the request
         if trimmed:
             request.set_status(spec.key, stream_trimmed=True)
-        for msg_obj in [*messages, *feed.messages()[len(feed.log) :]]:
+        for msg_obj in [*feed.messages()[len(feed.log) :], *messages]:
             self._ingest_message([request], msg_obj, spec.device)
         if request.bundle.max_buffer_size is None or trimmed:
             return
