@@ -66,6 +66,33 @@ class ScanManager:
         self.connector.register(
             topics=MessageEndpoints.scan_restart(), cb=self._scan_restart_callback
         )
+        self._load_stored_state()
+
+    def _load_stored_state(self) -> None:
+        """
+        Take the state the server stored before this client subscribed: the scan queue, the
+        last scan status and the points of that scan so far. Without it, a client started
+        during a scan knows neither the scan nor its data until the next queue update.
+
+        It runs after the subscriptions, so nothing published meanwhile is missed. A message
+        that already arrived is newer than the stored one and is kept.
+        """
+        queue = self.connector.get(MessageEndpoints.scan_queue_status())
+        if queue is None:
+            return
+        self.queue_storage.restore_status(queue)
+        self.scan_storage.update_with_queue_status(queue)  # adds only scans it lacks
+        status = self.connector.get(MessageEndpoints.scan_status())
+        if not isinstance(status, messages.ScanStatusMessage):
+            return
+        self.scan_storage.restore_scan_status(status)
+        keys = self.connector.keys(
+            MessageEndpoints.public_scan_segment(scan_id=status.scan_id, point_id="*").endpoint
+        )
+        segments = self.connector.mget(keys) if keys else []
+        self.scan_storage.restore_scan_segments(
+            status.scan_id, [msg for msg in segments if isinstance(msg, messages.ScanMessage)]
+        )
 
     def update_with_queue_status(self, queue: messages.ScanQueueStatusMessage) -> None:
         """update storage with a new queue status message"""

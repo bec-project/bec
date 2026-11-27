@@ -209,6 +209,7 @@ class QueueStorage:
         self._lock = threading.RLock()
         self.scan_manager = scan_manager
         self.current_scan_queue: dict[str, messages.ScanQueueStatus] | None = None
+        self._status_received = False
         self.queue_history: list[messages.ScanQueueHistoryMessage] | None = None
 
     def _update_queue_history(self):
@@ -286,8 +287,24 @@ class QueueStorage:
         return capture.get()
 
     @threadlocked
+    def restore_status(self, queue_msg: messages.ScanQueueStatusMessage) -> None:
+        """
+        Take the queue status the server stored, unless a published one has already arrived:
+        that one is newer.
+
+        Args:
+            queue_msg (messages.ScanQueueStatusMessage): The stored queue status.
+        """
+        if not self._status_received:
+            self._apply_status(queue_msg)
+
+    @threadlocked
     def update_with_status(self, queue_msg: messages.ScanQueueStatusMessage) -> None:
         """update a queue item with a new ScanQueueStatusMessage / queue message"""
+        self._status_received = True
+        self._apply_status(queue_msg)
+
+    def _apply_status(self, queue_msg: messages.ScanQueueStatusMessage) -> None:
         self.current_scan_queue = queue_msg.queue
         self._update_queue_history()
         for queue in queue_msg.queue.values():
