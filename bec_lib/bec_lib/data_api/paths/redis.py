@@ -342,7 +342,7 @@ class RedisDataPath(DataPath):
             self._expect_replay(request, key, 1)  # not complete before the rows are in
             request.start_worker(self._replay_stream, spec, feed, name="data-api-catch-up")
             return
-        self._replay(request, spec, feed, list(feed.log), feed.trimmed)
+        self._replay(request, spec, list(feed.log), feed.trimmed)
 
     def _replay_stream(self, request: SourceRequest, spec: SourceSpec, feed: _Feed) -> None:
         """Worker: read the stream from Redis without the lock, then replay it into the request."""
@@ -360,19 +360,15 @@ class RedisDataPath(DataPath):
             self._expect_replay(request, key, None)
             indices = [self._stream_indices(m) for m in stored]
             if stored and all(indices):
-                # Every signal of the stream counts its own messages: one cutoff for each.
-                first, last = {}, {}
-                for name, index in (item for found in indices for item in found.items()):
-                    first[name] = min(index, first.get(name, index))
-                    last[name] = max(index, last.get(name, index))
+                first, last = self._index_ranges(indices)
                 # A message of the stream that the feed has not delivered yet comes once.
                 request.state.setdefault("replayed", {})[key] = last
                 # Delivered while the stream was read: these waited in the log.
                 later = [m for m in feed.log if not self._replayed(m, last)]
                 trimmed = whole and any(index > 0 for index in first.values())
-                self._replay(request, spec, feed, [*stored, *later], trimmed)
+                self._replay(request, spec, [*stored, *later], trimmed)
             else:
-                self._replay(request, spec, feed, list(feed.log), True)
+                self._replay(request, spec, list(feed.log), True)
         request.notify(UpdateReason.BACKFILL)
 
     def _expect_replay(self, request: SourceRequest, key: tuple, rows: int | None) -> None:
@@ -383,15 +379,11 @@ class RedisDataPath(DataPath):
                     request.series(spec).expect(rows)
 
     def _replay(
-        self,
-        request: SourceRequest,
-        spec: SourceSpec,
-        feed: _Feed,
-        messages: list[DeviceMessage],
-        trimmed: bool,
+        self, request: SourceRequest, spec: SourceSpec, messages: list[DeviceMessage], trimmed: bool
     ) -> None:
         """Ingest the messages a request catches up from, then the replace states. Lock held."""
         key = self._async_feed_key(request.scan_id, spec)
+        feed = self._feeds[key]  # held by the request
         if trimmed:
             request.set_status(spec.key, stream_trimmed=True)
         for msg_obj in [*messages, *feed.messages()[len(feed.log) :]]:
@@ -525,6 +517,16 @@ class RedisDataPath(DataPath):
         """The message index of every signal a message carries, each counted on its own."""
         indices = msg_obj.metadata.get("async_indices") or {}
         return {name: index for name, index in indices.items() if isinstance(index, int)}
+
+    @staticmethod
+    def _index_ranges(indices: list[dict[str, int]]) -> tuple[dict[str, int], dict[str, int]]:
+        """The first and the last message index of every signal: each signal counts its own."""
+        first: dict[str, int] = {}
+        last: dict[str, int] = {}
+        for name, index in (item for found in indices for item in found.items()):
+            first[name] = min(index, first.get(name, index))
+            last[name] = max(index, last.get(name, index))
+        return first, last
 
     def _replayed(self, msg_obj: DeviceMessage, cutoffs: dict[str, int] | None) -> bool:
         """Whether a request already has a message from its read of the stream."""
