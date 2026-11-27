@@ -18,6 +18,7 @@ from bec_lib.data_api.data_bundler import DataBundler
 from bec_lib.data_api.data_path import BindContext, SourceRequest, SourceSpec
 from bec_lib.data_api.models import SCAN_GROUP, CorrelationGroup
 from bec_lib.data_api.paths import FileDataPath
+from bec_lib.data_api.paths import file as file_path_module
 from bec_lib.data_api.scenarios import Scenario, classify
 from bec_lib.live_scan_data import LiveScanData
 from bec_lib.scan_data_container import SignalDataReference, SignalSlab
@@ -214,7 +215,8 @@ class TestHistoryPlugin:
         }
         mock_client.history, msg = make_history("vanished-history", stored, columns, num_points=2)
         updates = []
-        with mock.patch.object(FileDataPath, "_history_message", side_effect=[msg, None]):
+        # There for the read ahead and for resolve, gone when the loader asks.
+        with mock.patch.object(FileDataPath, "_history_message", side_effect=[msg, msg, None]):
             sub = data_api.subscribe(
                 sources=list(columns), scan="vanished-history", callback=updates.append
             )
@@ -1585,6 +1587,51 @@ def test_columns_of_a_scan_file_pair_when_the_catalog_lists_no_datasets(
     np.testing.assert_array_equal(aligned[samx], 10 + rows)
     np.testing.assert_array_equal(aligned[bpm4i], 100 + rows)
     sub.close()
+
+
+def test_file_of_a_scan_without_a_catalog_is_listed_before_the_lock(
+    data_api, mock_client, tmp_path, monkeypatch
+):
+    """The file of a scan written by an older BEC is opened without the Data API lock held."""
+    rows = np.arange(12.0)
+    samx, bpm4i = ("samx", "samx"), ("bpm4i", "bpm4i")
+    datasets = {samx: (10 + rows, rows), bpm4i: (100 + rows, rows)}
+    _serve_scan_file(mock_client, "old", tmp_path / "old.h5", datasets)
+    message = mock_client.history.get_message("old")
+    object.__setattr__(message, "stored_data_info", None)
+    object.__setattr__(message, "file_path", str(tmp_path / "old.h5"))
+    listed = file_path_module._datasets_of_file
+    reads = []  # for every read of the file: could another thread take the lock meanwhile?
+
+    def spy(file_path):
+        free = []
+
+        def try_lock():
+            free.append(data_api._lock.acquire(timeout=0.2))
+            if free[0]:
+                data_api._lock.release()
+
+        other = threading.Thread(target=try_lock)
+        other.start()
+        other.join()
+        misses = listed.cache_info().misses
+        found = listed(file_path)
+        if listed.cache_info().misses > misses:  # this call read the file
+            reads.extend(free)
+        return found
+
+    monkeypatch.setattr(file_path_module, "_datasets_of_file", spy)
+    for call in (
+        lambda: data_api.describe([samx, bpm4i], scan="old"),
+        lambda: data_api.subscribe(sources=[samx, bpm4i], scan="old", callback=lambda _: None),
+    ):
+        listed.cache_clear()
+        reads.clear()
+        result = call()
+        assert reads == [True]
+        if hasattr(result, "close"):
+            assert result.groups == {SCAN_GROUP: [samx, bpm4i]}
+            result.close()
 
 
 def test_stack_read_in_one_piece_is_cut_when_the_catalog_lists_no_datasets(data_api, mock_client):

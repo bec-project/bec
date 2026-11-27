@@ -447,6 +447,17 @@ class DataPath(ABC):
         self._api_ref = weakref.ref(api)
         self._lock = api._lock  # pylint: disable=protected-access
 
+    def prepare(self, scan_id: str) -> None:
+        """
+        Read ahead what :meth:`resolve` needs for a scan. Called WITHOUT the lock, before a bind.
+
+        The default does nothing. A path whose ``resolve`` would wait for slow I/O does that
+        I/O here and keeps the result, so that no other consumer waits for it under the lock.
+
+        Args:
+            scan_id (str): The scan that is about to be resolved.
+        """
+
     def current_open_scan(self) -> str | None:
         """
         Return the scan this path currently streams live, from cached state only.

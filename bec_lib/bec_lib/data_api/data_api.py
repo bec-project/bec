@@ -305,6 +305,7 @@ class DataAPI:
             live = self._current_live_scan() or client_views.latest_scan(self.client)
             if live is not None:
                 scan_id, scan_item = live
+                self._prepare_paths(scan_id)
                 with self._lock:
                     for subscription in followers:
                         if subscription._closed or subscription.scan_id is not None:
@@ -461,6 +462,7 @@ class DataAPI:
             if scan == ScanTarget.LIVE:
                 # Idle: show the most recent scan until the next one opens.
                 live_target = self._current_live_scan() or client_views.latest_scan(self.client)
+                self._prepare_paths(live_target[0] if live_target is not None else None)
                 with self._lock:
                     # A scan-status event may have bound a newer scan while the
                     # prefetch ran without the lock: never override it.
@@ -894,8 +896,19 @@ class DataAPI:
         return None
 
     def _peek_scan_item(self, scan_id: str) -> Any:
-        """Lock-free-caller read of one scan item (same lock-order rule)."""
+        """Lock-free-caller read of one scan item (same lock-order rule); the paths read ahead."""
+        self._prepare_paths(scan_id)
         return client_views.scan_item(self.client, scan_id)
+
+    def _prepare_paths(self, scan_id: str | None) -> None:
+        """Let the paths do the slow reads a bind of ``scan_id`` needs. Call WITHOUT the lock."""
+        if scan_id is None:
+            return
+        for path in list(self.paths):
+            try:
+                path.prepare(scan_id)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning(f"{type(path).__name__}.prepare failed for scan {scan_id}: {exc}")
 
     def close(self) -> None:
         """Close subscriptions, disconnect paths, and remove this facade from the registry."""

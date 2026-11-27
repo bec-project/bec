@@ -338,12 +338,18 @@ class FileDataPath(DataPath):
         """
         return self._history_message(scan_id)
 
+    def prepare(self, scan_id: str) -> None:
+        msg = self.catalog_entry(scan_id)
+        if msg is not None and not msg.stored_data_info and hasattr(msg, "model_copy"):
+            _datasets_of_file(getattr(msg, "file_path", None))  # kept for resolve
+
     def resolve(self, sources: list[SourceKey], context: BindContext) -> list[SourceSpec] | None:
         msg = self.catalog_entry(context.scan_id)
         if msg is None:
             return None
         if not msg.stored_data_info and hasattr(msg, "model_copy"):
-            # Written by an older BEC: the file itself says which datasets it holds.
+            # Written by an older BEC: the file itself says which datasets it holds. It was
+            # listed in prepare(), without the lock; here the kept list is taken.
             listed = _datasets_of_file(getattr(msg, "file_path", None))
             msg = msg.model_copy(update={"stored_data_info": listed}) if listed else msg
         specs = stored_scan_specs(self.client, sources, msg)
