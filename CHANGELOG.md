@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v4.10.0 (2026-11-27)
+
+### Bug Fixes
+
+- Export scan sequences directly for IPython
+  ([`340e375`](https://github.com/bec-project/bec/commit/340e375997b493b5e199bbbfd562514bc720b25c))
+
+- Harden scan sequencer execution and cleanup
+  ([`bfd87f7`](https://github.com/bec-project/bec/commit/bfd87f7f03f253b1b4aa0825d3961258eb561e0c))
+
+- Reuse existing procedure fixture for sequencer e2e
+  ([`972a2be`](https://github.com/bec-project/bec/commit/972a2bec1a01260eece375101d4fa01e29bc80f9))
+
+- Run sequencer e2e with subprocess workers
+  ([`927c1b4`](https://github.com/bec-project/bec/commit/927c1b4911883eabd5075990505cb5eede8fd2df))
+
+- **scan-sequencer**: Harden validation and native move handling
+  ([`0da2a92`](https://github.com/bec-project/bec/commit/0da2a92033ffe3d307ff3ba235d3db1f6dd7d43b))
+
+### Features
+
+- Add composable scan sequencer
+  ([`d4bad67`](https://github.com/bec-project/bec/commit/d4bad6723e5c10109c08eaf512d08342ff5a5dfc))
+
+
 ## v4.9.0 (2026-11-25)
 
 ### Build System
