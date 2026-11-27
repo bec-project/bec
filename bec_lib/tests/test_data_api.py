@@ -1232,7 +1232,7 @@ class TestAxisModes:
         for count, row in enumerate([100, *range(100)]):
             feed.callback({"data": async_msg("wave", [row], count, "add_slice", slice_index=row)})
         assert tuple(updates[-1].get("det", "wave").ordinals) == (99, 100)
-        assert len(feed.log) == 2
+        assert len(feed.log) < 8  # gone through whenever it has doubled
         sub.close()
 
     def test_feed_log_is_cut_for_each_signal_of_a_stream(self, data_api, mock_client, monkeypatch):
@@ -1261,7 +1261,7 @@ class TestAxisModes:
         sent = [partial_msg("y", 0)] + [partial_msg("x", i) for i in range(499)]
         for message in sent:
             feed.callback({"data": message})
-        assert len(feed.log) == 3  # the one row of y and the last two of x
+        assert len(feed.log) < 8  # the one row of y, the last two of x and what came since
 
         monkeypatch.setattr(
             mock_client.connector,
@@ -1275,6 +1275,44 @@ class TestAxisModes:
         assert tuple(ups_b[-1].get("gauss", "gauss_data_y").ordinals) == (0,)
         sub_a.close()
         sub_b.close()
+
+    def test_feed_log_is_not_gone_through_for_every_message(
+        self, data_api, mock_client, monkeypatch
+    ):
+        """
+        One consumer keeps every row of a signal, another the last rows of a second signal
+        of the same stream. The log then holds the whole first signal: looking through all
+        of it for every message would cost the square of the scan length, under the lock.
+        """
+        mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(
+            "gauss", "gauss_data", ("x", "y")
+        )
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        subs = [
+            data_api.subscribe(
+                sources=[key],
+                scan="scan_1",
+                callback=lambda _: None,
+                update_rate=None,
+                max_buffer_size=cap,
+            )
+            for key, cap in zip(GAUSS_KEYS, (None, 2))
+        ]
+        plugin = data_api.paths[0]
+        feed = next(iter(plugin._feeds.values()))
+        looked_at = []
+        below = plugin._below
+        monkeypatch.setattr(plugin, "_below", lambda *args: looked_at.append(1) or below(*args))
+        rows = 1000
+        for index in range(rows):
+            feed.callback({"data": partial_msg("x", index)})
+            feed.callback({"data": partial_msg("y", index)})
+        assert len(looked_at) < 20 * rows
+        assert len(feed.log) < 2 * rows + 8  # every row of x, and of y at most as many again
+        for sub in subs:
+            sub.close()
 
     def test_later_request_with_a_cap_reads_only_what_it_keeps(
         self, data_api, mock_client, monkeypatch
