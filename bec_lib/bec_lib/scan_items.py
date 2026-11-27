@@ -384,6 +384,37 @@ class ScanStorage:
         scan_item.emit_status(scan_status)
 
     @threadlocked
+    def restore_scan_status(self, scan_status: messages.ScanStatusMessage) -> None:
+        """Apply a scan status the server stored, unless a published one has already arrived.
+
+        The check and the update hold the storage lock, so a status published meanwhile
+        (newer than the stored one) is never overwritten.
+
+        Args:
+            scan_status (messages.ScanStatusMessage): The stored scan status.
+        """
+        scan_item = self.find_scan_by_ID(scan_status.scan_id)
+        if scan_item is not None and scan_item.status_message is None:
+            self.update_with_scan_status(scan_status)
+
+    @threadlocked
+    def restore_scan_segments(self, scan_id: str, segments: list[messages.ScanMessage]) -> None:
+        """Add the stored points of a scan that this client has not received yet.
+
+        No data callbacks are emitted: consumers read the points from ``live_data``.
+
+        Args:
+            scan_id (str): The scan of the points.
+            segments (list[messages.ScanMessage]): The stored scan messages.
+        """
+        scan_item = self.find_scan_by_ID(scan_id)
+        if scan_item is None:
+            return
+        for segment in segments:
+            if segment.point_id not in scan_item.live_data.messages:
+                scan_item.live_data.set(segment.point_id, segment)
+
+    @threadlocked
     def add_scan_segment(self, scan_msg: messages.ScanMessage) -> None:
         """Add a new data segment to a scan item.
 

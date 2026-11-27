@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -10,6 +11,7 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 from bec_lib.request_context import ActiveRequestContext, active_request_context
+from bec_lib.scan_items import ScanItem
 from bec_lib.scan_manager import ScanManager
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -509,3 +511,133 @@ def test_scan_manager_add_public_file_pending(scan_manager_with_scan):
         "File: /Users/scans/S00001_master.h5"
         in scan_manager_with_scan.scan_storage.storage[-1].describe()
     )
+
+
+def test_client_started_during_a_scan_takes_the_state_the_server_stored(
+    connected_connector, scan_queue_status_msg
+):
+    """A client started while a scan runs has the scan, its status and its points so far."""
+    scan_id = "bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5"
+    connector = connected_connector
+    connector.set_and_publish(MessageEndpoints.scan_queue_status(), scan_queue_status_msg)
+    connector.set_and_publish(
+        MessageEndpoints.scan_status(),
+        messages.ScanStatusMessage(scan_id=scan_id, status="open", info={"num_points": 10}),
+    )
+    for point_id in range(3):
+        connector.set(
+            MessageEndpoints.public_scan_segment(scan_id=scan_id, point_id=point_id),
+            messages.ScanMessage(
+                point_id=point_id,
+                scan_id=scan_id,
+                data={"bpm4i": {"bpm4i": {"value": float(point_id), "timestamp": 1.0}}},
+                metadata={"scan_id": scan_id},
+            ),
+        )
+
+    manager = ScanManager(connector=connector)  # started after all of the above
+    try:
+        item = manager.scan_storage.find_scan_by_ID(scan_id)
+        assert item is not None
+        assert item.status == "open" and item.status_message is not None
+        assert sorted(item.live_data.messages) == [0, 1, 2]
+        assert manager.scan_storage.current_scan is item
+    finally:
+        manager.shutdown()
+
+
+def _segment(scan_id: str, point_id: int, value: float) -> messages.ScanMessage:
+    return messages.ScanMessage(
+        point_id=point_id,
+        scan_id=scan_id,
+        data={"bpm4i": {"bpm4i": {"value": value, "timestamp": 1.0}}},
+        metadata={"scan_id": scan_id},
+    )
+
+
+def _pause_first_status_read(item: ScanItem, reader: threading.Thread):
+    """Make the first read of ``item.status_message`` by ``reader`` wait until released."""
+    reading, release = threading.Event(), threading.Event()
+    values = {"status_message": item.__dict__.pop("status_message")}
+
+    def get(_self):
+        value = values["status_message"]
+        if threading.current_thread() is reader and not reading.is_set():
+            reading.set()  # the value is read; hold the reader before it acts on it
+            release.wait(5)
+        return value
+
+    def set_(_self, value):
+        values["status_message"] = value
+
+    item.__class__ = type("PausedScanItem", (ScanItem,), {"status_message": property(get, set_)})
+    return reading, release
+
+
+def test_stored_status_does_not_overwrite_a_status_published_during_the_start(
+    connected_connector, scan_queue_status_msg
+):
+    """A live "closed" that arrives while the stored "open" is being restored wins."""
+    scan_id = "bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5"
+    connector = connected_connector
+    connector.set_and_publish(MessageEndpoints.scan_queue_status(), scan_queue_status_msg)
+    manager = ScanManager(connector=connector)
+    try:
+        item = manager.scan_storage.find_scan_by_ID(scan_id)
+        assert item is not None and item.status_message is None
+        stored_open = messages.ScanStatusMessage(scan_id=scan_id, status="open", info={})
+        live_closed = messages.ScanStatusMessage(scan_id=scan_id, status="closed", info={})
+        get = connector.get
+        connector.get = lambda topic, *a, **kw: (
+            stored_open if topic == MessageEndpoints.scan_status() else get(topic, *a, **kw)
+        )
+        restore = threading.Thread(target=manager._load_stored_state)
+        reading, release = _pause_first_status_read(item, restore)
+        restore.start()
+        assert reading.wait(5)
+        live = threading.Thread(
+            target=manager.scan_storage.update_with_scan_status, args=(live_closed,)
+        )
+        live.start()
+        live.join(0.3)  # the live status arrives while the restore checks the item
+        release.set()
+        restore.join(5)
+        live.join(5)
+        assert item.status == "closed"
+    finally:
+        manager.shutdown()
+
+
+def test_stored_queue_and_points_do_not_replace_newer_ones(
+    connected_connector, scan_queue_status_msg
+):
+    """The stored queue and points fill gaps only; what arrived live is kept."""
+    scan_id = "bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5"
+    connector = connected_connector
+    connector.set_and_publish(MessageEndpoints.scan_queue_status(), scan_queue_status_msg)
+    connector.set_and_publish(
+        MessageEndpoints.scan_status(),
+        messages.ScanStatusMessage(scan_id=scan_id, status="open", info={}),
+    )
+    connector.set(
+        MessageEndpoints.public_scan_segment(scan_id=scan_id, point_id=0), _segment(scan_id, 0, 1.0)
+    )
+    manager = ScanManager(connector=connector)
+    try:
+        item = manager.scan_storage.find_scan_by_ID(scan_id)
+        assert item.queue is not None  # the queue item of the scan is restored too
+        live_queue = messages.ScanQueueStatusMessage(
+            queue={"primary": messages.ScanQueueStatus(info=[], status="RUNNING")}
+        )
+        manager.queue_storage.update_with_status(live_queue)
+        manager.queue_storage.restore_status(scan_queue_status_msg)
+        assert manager.queue_storage.current_scan_queue == live_queue.queue
+
+        manager.scan_storage.add_scan_segment(_segment(scan_id, 1, 99.0))
+        manager.scan_storage.restore_scan_segments(
+            scan_id, [_segment(scan_id, 1, -1.0), _segment(scan_id, 2, 2.0)]
+        )
+        assert sorted(item.live_data.messages) == [0, 1, 2]
+        assert item.live_data.messages[1].data["bpm4i"]["bpm4i"]["value"] == 99.0
+    finally:
+        manager.shutdown()
