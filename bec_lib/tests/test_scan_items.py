@@ -64,43 +64,6 @@ def test_update_with_queue_status(scan_queue_status_msg):
     )
 
 
-def test_scan_item_to_pandas(scan_item):
-    scan_item.live_data = LiveScanData()
-    data = {
-        0: messages.ScanMessage(
-            point_id=0, scan_id="scan_id", data={"samx": {"samx": {"value": 1, "timestamp": 0}}}
-        ),
-        1: messages.ScanMessage(
-            point_id=1, scan_id="scan_id", data={"samx": {"samx": {"value": 2, "timestamp": 0}}}
-        ),
-        2: messages.ScanMessage(
-            point_id=2, scan_id="scan_id", data={"samx": {"samx": {"value": 3, "timestamp": 0}}}
-        ),
-    }
-    for ii, msg in data.items():
-        scan_item.live_data.set(ii, msg)
-
-    df = scan_item.to_pandas()
-    assert df["samx"]["samx"]["value"].tolist() == [1, 2, 3]
-    assert df["samx"]["samx"]["timestamp"].tolist() == [0, 0, 0]
-
-
-def test_scan_item_to_pandas_empty_data(scan_item):
-    scan_item.data = LiveScanData()
-
-    df = scan_item.to_pandas()
-    assert df.empty
-
-
-def test_scan_item_to_pandas_raises_without_pandas_installed(scan_item):
-    """Test that to_pandas raises an ImportError if pandas is not installed."""
-
-    with mock.patch.object(scan_item, "_get_pandas") as get_pandas:
-        get_pandas.side_effect = ImportError
-        with pytest.raises(ImportError):
-            scan_item.to_pandas()
-
-
 def test_scan_item_str(scan_item):
     start_time = "Fri Jun 23 15:11:06 2023"
     # convert to datetime string to timestamp

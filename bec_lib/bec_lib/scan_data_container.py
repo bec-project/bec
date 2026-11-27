@@ -7,7 +7,6 @@ from __future__ import annotations
 import copy
 import datetime
 import functools
-import importlib
 import time
 from collections import deque, namedtuple
 from collections.abc import Iterable, Iterator
@@ -687,43 +686,6 @@ class ReadableLinkedAttributeDict(LinkedAttributeDict):
             dict: The data from the devices.
         """
         return {name: device.read() for name, device in self.items()}
-
-    def _get_pandas(self):
-        try:
-            return importlib.import_module("pandas")
-        except ImportError as exc:
-            raise ImportError("Install `pandas` to use to_pandas() method") from exc
-
-    def to_pandas(self):
-        """
-        Convert the data to a pandas DataFrame.
-
-        Returns:
-            pandas.DataFrame: The data as a pandas DataFrame.
-        """
-        pd = self._get_pandas()
-        data = self.read()
-        frame = {}
-        index_length = None
-        for device, device_data in data.items():
-            for signal, signal_data in device_data.items():
-                for key, value in signal_data.items():
-                    frame[(device, signal, key)] = value
-                    if isinstance(value, Iterable):
-                        _val_length = len(value)
-                    else:
-                        _val_length = 1
-
-                    if index_length is None:
-                        index_length = _val_length
-                    elif index_length != _val_length:
-                        raise ValueError(
-                            f"Length of data for {device}/{signal}/{key} does not match other signals."
-                        )
-        if not index_length:
-            raise ValueError("No data found in the readout group.")
-
-        return pd.DataFrame(frame, index=range(index_length))
 
 
 class ReadoutGroup:
