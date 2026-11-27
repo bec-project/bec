@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.12.0 (2026-11-27)
+
+### Features
+
+- **zmq**: Load receivers from installed BEC plugins
+  ([`9325991`](https://github.com/bec-project/bec/commit/932599168da7b6e24054224a7fa138f141cbc820))
+
+
 ## v4.11.0 (2026-11-27)
 
 ### Bug Fixes
