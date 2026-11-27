@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.10.1 (2026-11-27)
+
+### Bug Fixes
+
+- **redis**: Cancel in-flight retries during shutdown
+  ([`b9a2187`](https://github.com/bec-project/bec/commit/b9a21872d2f0a617128e1c1dd1af5d860cb7e906))
+
+
 ## v4.10.0 (2026-11-27)
 
 ### Bug Fixes
