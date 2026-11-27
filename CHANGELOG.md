@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.11.0 (2026-11-27)
+
+### Bug Fixes
+
+- **history**: Bound startup loading and preserve concurrent updates
+  ([`d0c5086`](https://github.com/bec-project/bec/commit/d0c5086feefb4f2f6aee8aa4ba13a2d80528053a))
+
+### Features
+
+- **redis**: Add bounded reverse stream reads with entry IDs
+  ([`2076f31`](https://github.com/bec-project/bec/commit/2076f3147923f9347c0276fea4eb54a64dc61001))
+
+
 ## v4.10.1 (2026-11-27)
 
 ### Bug Fixes
