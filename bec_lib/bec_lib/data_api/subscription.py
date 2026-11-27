@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from bec_lib.logger import bec_logger
 
+from . import client_views
 from .data_bundler import CorrelationGroupError, DataBundler, partition_correlation_groups
 from .data_path import BindContext, DataPath, SourceRequest, SourceSpec, total_estimated_bytes
 from .models import (
@@ -141,8 +142,11 @@ class Subscription:
         force_source: str | None = None,
         pair_sources: bool = False,
         view_limit_bytes: int | None = None,
+        queue: str | None = None,
     ):
         self._api = api
+        #: The scan queue a live follower follows; ``None`` when none is known (any queue).
+        self._queue = queue if queue is not None else client_views.default_queue(api.client)
         self._lock = api._lock
         self._callback = callback
         self._progress_callback = progress_callback
@@ -246,6 +250,11 @@ class Subscription:
     def force_source(self) -> str | None:
         """The data source this subscription is pinned to (``None`` = any)."""
         return self._force_source
+
+    @property
+    def queue(self) -> str | None:
+        """The scan queue a live subscription follows (``None`` = any queue)."""
+        return self._queue
 
     @property
     def pair_sources(self) -> bool:
@@ -903,6 +912,13 @@ class Subscription:
         return report
 
     def _on_scan_status(self, scan_status: dict, _metadata: dict) -> None:
+        scan_id = scan_status.get("scan_id")
+        if self._follow and scan_id and scan_id != self._scan_id:
+            # A follower follows its own queue. Read before the lock (scan-storage lock order).
+            if not client_views.in_queue(
+                client_views.scan_item(self._api.client, scan_id), self._queue
+            ):
+                return
         with self._lock:
             self._handle_scan_status(scan_status)
         self._flush_deferred()

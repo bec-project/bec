@@ -44,12 +44,54 @@ def history_message(client: BECClient, scan_id: str) -> Any:
     return history.get_message(scan_id)
 
 
-def current_live_scan(client: BECClient) -> tuple[str, ScanItem] | None:
-    """Return ``(scan_id, scan_item)`` of the running scan, or ``None``."""
+def default_queue(client: BECClient) -> str | None:
+    """Return the client's default scan queue (e.g. ``"primary"``), or ``None`` if unknown."""
+    queue = None if client.queue is None else client.queue.get_default_scan_queue()
+    return queue if isinstance(queue, str) else None
+
+
+def scan_queue(item: ScanItem | None) -> str | None:
+    """
+    Return the scan queue a scan was submitted to, or ``None`` while it is not known.
+
+    The queue entry of the scan holds the request it came from (``ScanQueueMessage.queue``);
+    the client knows the entry from the queue updates it has seen.
+    """
+    queue_item = None if item is None else item.queue
+    blocks = getattr(queue_item, "request_blocks", None) or []
+    queue = getattr(getattr(blocks[0], "msg", None), "queue", None) if blocks else None
+    return queue if isinstance(queue, str) else None
+
+
+def in_queue(item: ScanItem | None, queue: str | None) -> bool:
+    """
+    Whether a scan belongs to ``queue``. ``None`` stands for any queue, and a scan whose
+    queue is not known yet counts as in it.
+    """
+    name = scan_queue(item)
+    return queue is None or name is None or name == queue
+
+
+def _queue_scan_ids(client: BECClient, queue: str) -> list[str | None]:
+    """The scan ids of the active entry of a named queue; empty when it has none."""
+    queues = client.queue.queue_storage.current_scan_queue or {}
+    status = queues.get(queue)
+    return list(status.info[0].scan_id) if status is not None and status.info else []
+
+
+def current_live_scan(client: BECClient, queue: str | None = None) -> tuple[str, ScanItem] | None:
+    """
+    Return ``(scan_id, scan_item)`` of the scan running in ``queue``, or ``None``.
+
+    ``None`` is the client's default queue, the one its scans are submitted to.
+    """
     storage = scan_storage(client)
     if storage is None:
         return None
-    current = storage.current_scan_id
+    if queue is None or queue == default_queue(client):
+        current = storage.current_scan_id  # the default queue's active entry
+    else:
+        current = _queue_scan_ids(client, queue)
     if not current:
         return None
     scan_id = current[0]  # the ids of the active queue entry; an entry may hold none yet
@@ -67,9 +109,12 @@ def scan_start(item: ScanItem) -> float:
     return float(started) if isinstance(started, (int, float)) else 0.0
 
 
-def latest_scan(client: BECClient) -> tuple[str, ScanItem | None] | None:
+def latest_scan(client: BECClient, queue: str | None = None) -> tuple[str, ScanItem | None] | None:
     """
     Return ``(scan_id, scan_item)`` of the most recent scan, running or finished, or ``None``.
+
+    Only scans of ``queue`` are considered (``None``: any queue). The history registry does
+    not say which queue a finished scan ran in: its entries are always considered.
 
     Scan storage holds the scans this client saw (with their live data, also before the
     file is written); the history registry holds finished scans, including those from
@@ -83,6 +128,8 @@ def latest_scan(client: BECClient) -> tuple[str, ScanItem | None] | None:
     for item in list(storage.storage) if storage is not None else ():
         # An item is created from the queue entry; its id and status follow later.
         if not isinstance(item.scan_id, str) or not item.scan_id or item.status_message is None:
+            continue
+        if not in_queue(item, queue):
             continue
         if scan_start(item) >= started:
             started, scan_id, latest_item = scan_start(item), item.scan_id, item

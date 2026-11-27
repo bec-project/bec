@@ -76,6 +76,14 @@ def make_scan_item(mock_client, scan_id="scan_1", monitored=("samx", "samy"), st
     return item
 
 
+def submitted_to(item, queue):
+    """Give a scan item the queue entry of a request submitted to ``queue``."""
+    entry = SimpleNamespace(request_blocks=[SimpleNamespace(msg=SimpleNamespace(queue=queue))])
+    item.scan_manager = SimpleNamespace(
+        queue_storage=SimpleNamespace(find_queue_item_by_ID=lambda _queue_id: entry)
+    )
+
+
 def register_scan(mock_client, items):
     mock_client.queue.scan_storage.find_scan_by_ID.side_effect = lambda sid: items.get(sid)
 
@@ -657,6 +665,55 @@ class TestLiveSubscription:
         n_before = len(updates)
         sub._on_scan_status({"scan_id": "scan_2", "status": "closed"}, {})
         assert len(updates) == n_before + 1  # final flush
+        sub.close()
+
+    def test_live_follower_stays_in_the_default_queue(self, data_api, mock_client):
+        """A scan of another queue does not take a follower of the default queue away."""
+        mock_client.queue.get_default_scan_queue.return_value = "primary"
+        items = {
+            scan_id: make_scan_item(mock_client, scan_id)
+            for scan_id in ("scan_1", "scan_2", "scan_3")
+        }
+        for scan_id, queue in (("scan_1", "primary"), ("scan_2", "other"), ("scan_3", "primary")):
+            submitted_to(items[scan_id], queue)
+        register_scan(mock_client, items)
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")], scan="live", callback=lambda _: None, update_rate=None
+        )
+        assert sub.scan_id == "scan_1"
+        sub._on_scan_status({"scan_id": "scan_2", "status": "open"}, {})
+        assert sub.scan_id == "scan_1"
+        sub._on_scan_status({"scan_id": "scan_3", "status": "open"}, {})
+        assert sub.scan_id == "scan_3"
+        assert sub.queue == "primary"
+        sub.close()
+
+    def test_live_follower_follows_the_queue_it_is_given(self, data_api, mock_client):
+        """``queue`` picks the queue: its running scan, and its next scans only."""
+        mock_client.queue.get_default_scan_queue.return_value = "primary"
+        items = {scan_id: make_scan_item(mock_client, scan_id) for scan_id in ("scan_1", "scan_2")}
+        submitted_to(items["scan_1"], "primary")
+        submitted_to(items["scan_2"], "other")
+        register_scan(mock_client, items)
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]  # the default queue's
+        entry = SimpleNamespace(scan_id=["scan_2"])
+        mock_client.queue.queue_storage.current_scan_queue = {
+            "primary": SimpleNamespace(info=[SimpleNamespace(scan_id=["scan_1"])]),
+            "other": SimpleNamespace(info=[entry]),
+        }
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")],
+            scan="live",
+            callback=lambda _: None,
+            update_rate=None,
+            queue="other",
+        )
+        assert sub.queue == "other" and sub.scan_id == "scan_2"
+        items["scan_3"] = make_scan_item(mock_client, "scan_3")
+        submitted_to(items["scan_3"], "primary")
+        sub._on_scan_status({"scan_id": "scan_3", "status": "open"}, {})
+        assert sub.scan_id == "scan_2"
         sub.close()
 
     def test_concrete_scan_retries_unavailable_sources_and_flushes_on_close(
@@ -1780,8 +1837,8 @@ class TestAxisModes:
         )
         original = data_api._current_live_scan
 
-        def racing_prefetch():
-            target = original()
+        def racing_prefetch(queue=None):
+            target = original(queue)
             handlers["scan_status"]({"scan_id": "scan_2", "status": "open"}, {})
             return target
 
@@ -2552,3 +2609,28 @@ def test_unbound_source_recovers_on_next_scan_status(data_api, mock_client):
     wave_updates = [u for u in updates if ("det", "wave") in u.sources]
     assert list(wave_updates[-1].get("det", "wave").values) == [10.0]
     sub.close()
+
+
+def test_scan_queue_is_the_queue_the_scan_was_submitted_to(scan_queue_status_msg):
+    """The queue of a scan comes from its queue entry, as the client stores it."""
+    from bec_lib.data_api import client_views
+    from bec_lib.scan_manager import ScanManager
+    from bec_lib.tests.utils import ConnectorMock
+
+    entry = scan_queue_status_msg.queue["primary"].info[0]
+    block = entry.request_blocks[0]
+    block = block.model_copy(update={"msg": block.msg.model_copy(update={"queue": "other"})})
+    queue_msg = messages.ScanQueueStatusMessage(
+        queue={
+            "primary": messages.ScanQueueStatus(info=[], status="RUNNING"),
+            "other": messages.ScanQueueStatus(
+                info=[entry.model_copy(update={"request_blocks": [block]})], status="RUNNING"
+            ),
+        }
+    )
+    manager = ScanManager(ConnectorMock(""))
+    manager.update_with_queue_status(queue_msg)
+    item = manager.scan_storage.find_scan_by_ID(entry.scan_id[0])
+    assert client_views.scan_queue(item) == "other"
+    assert not client_views.in_queue(item, "primary") and client_views.in_queue(item, "other")
+    assert client_views.scan_queue(None) is None and client_views.in_queue(None, "primary")

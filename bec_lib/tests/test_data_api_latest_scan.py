@@ -171,9 +171,9 @@ def test_history_loaded_event_does_not_wait_for_the_scan_storage(
     storage_free = threading.Event()  # the dispatcher holds the scan storage until then
     current_live_scan = client_views.current_live_scan
 
-    def waits_for_the_storage(client):
+    def waits_for_the_storage(client, queue=None):
         storage_free.wait(5)
-        return current_live_scan(client)
+        return current_live_scan(client, queue)
 
     monkeypatch.setattr(client_views, "current_live_scan", waits_for_the_storage)
     history_thread = threading.Thread(target=sub._on_scan_history_loaded)

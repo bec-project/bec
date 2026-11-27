@@ -299,28 +299,32 @@ class DataAPI:
                 and subscription._follow
                 and subscription.scan_id is None
             ]
-        if followers:
+        by_queue: dict[str | None, list[Subscription]] = {}
+        for subscription in followers:
+            by_queue.setdefault(subscription.queue, []).append(subscription)
+        for queue, queue_followers in by_queue.items():
             # A live follower created before this path or the scan history existed may now
             # have a scan to follow: the running one, or the most recent one, as in subscribe().
-            live = self._current_live_scan() or client_views.latest_scan(self.client)
-            if live is not None:
-                scan_id, scan_item = live
-                self._prepare_paths(scan_id)
-                with self._lock:
-                    for subscription in followers:
-                        if subscription._closed or subscription.scan_id is not None:
-                            continue
-                        try:
-                            subscription._reresolve(
-                                scan_id,
-                                UpdateReason.REBIND,
-                                scan_item=scan_item,
-                                require_available=True,
-                            )
-                        except Exception:  # pylint: disable=broad-except
-                            logger.exception(f"Binding a live follower to {scan_id!r} failed.")
-                for subscription in followers:
-                    subscription._flush_deferred()
+            live = self._current_live_scan(queue) or client_views.latest_scan(self.client, queue)
+            if live is None:
+                continue
+            scan_id, scan_item = live
+            self._prepare_paths(scan_id)
+            with self._lock:
+                for subscription in queue_followers:
+                    if subscription._closed or subscription.scan_id is not None:
+                        continue
+                    try:
+                        subscription._reresolve(
+                            scan_id,
+                            UpdateReason.REBIND,
+                            scan_item=scan_item,
+                            require_available=True,
+                        )
+                    except Exception:  # pylint: disable=broad-except
+                        logger.exception(f"Binding a live follower to {scan_id!r} failed.")
+            for subscription in queue_followers:
+                subscription._flush_deferred()
         if not targets:
             return
         # Scan items are read before taking the lock (lock-order rule).
@@ -355,6 +359,7 @@ class DataAPI:
         devices: list[str] | None = None,
         view_limit_bytes: int | None = None,
         pair_sources: bool = False,
+        queue: str | None = None,
     ) -> Subscription:
         """
         Create a subscription delivering columnar updates for the sources.
@@ -407,6 +412,9 @@ class DataAPI:
                 the subscription delivers an overview (the extremes of every bin of rows)
                 and the rows asked for with :meth:`Subscription.request_view`. The source
                 then carries ``metadata["view"]``. ``None`` holds every column whole.
+            queue (str | None): The scan queue a live subscription (``scan="live"``) follows.
+                ``None`` is the client's default queue
+                (``client.queue.get_default_scan_queue()``), the one its scans run in.
             force_source (str | None): Pin the subscription to one data
                 source (a :class:`DataSource` value or the ``data_source``
                 of a registered path), e.g. ``"file"`` to bypass Redis for a
@@ -454,6 +462,7 @@ class DataAPI:
             force_source=force_source,
             pair_sources=pair_sources,
             view_limit_bytes=view_limit_bytes,
+            queue=queue,
         )
         # Prefetch scan items BEFORE taking the DataAPI lock: the reads take
         # the scan-manager RLock, and acquiring it under our lock inverts the
@@ -461,7 +470,10 @@ class DataAPI:
         try:
             if scan == ScanTarget.LIVE:
                 # Idle: show the most recent scan until the next one opens.
-                live_target = self._current_live_scan() or client_views.latest_scan(self.client)
+                queue = subscription.queue
+                live_target = self._current_live_scan(queue) or client_views.latest_scan(
+                    self.client, queue
+                )
                 self._prepare_paths(live_target[0] if live_target is not None else None)
                 with self._lock:
                     # A scan-status event may have bound a newer scan while the
@@ -844,12 +856,16 @@ class DataAPI:
         reject_reentrant_call(self._lock, "DataAPI.refresh()")
         target = DEVICE_SCOPE if scan_id is None else scan_id
         prefetched = self._peek_scan_item(scan_id) if scan_id else None
-        # Followers follow the live scan, never just any scan a path describes as open.
-        live = self._current_live_scan() if scan_id is not None else None
-        follow_target = live is not None and live[0] == scan_id
+        # Followers follow the live scan of their queue, never just any scan a path
+        # describes as open. Read before the lock (lock-order rule).
+        with self._lock:
+            queues = {s.queue for s in self._subscriptions if s._follow}
+        lives = {q: self._current_live_scan(q) for q in queues} if scan_id is not None else {}
         with self._lock:
             subscriptions = list(self._subscriptions)
             for subscription in subscriptions:
+                live = lives.get(subscription.queue)
+                follow_target = live is not None and live[0] == scan_id
                 if subscription._closed:
                     continue
                 try:
@@ -872,16 +888,16 @@ class DataAPI:
         for subscription in subscriptions:
             subscription._flush_deferred()
 
-    def _current_live_scan(self) -> tuple[str, Any] | None:
+    def _current_live_scan(self, queue: str | None = None) -> tuple[str, Any] | None:
         """
-        Read the currently running scan (id, item) from the queue.
+        Read the currently running scan (id, item) of ``queue`` (``None``: the default queue).
 
         Takes the scan-manager RLock internally — must be called WITHOUT the
         DataAPI lock held (see the lock-order rule on ``Subscription._bind``).
         When BEC runs no scan, the data paths serving open scans are asked for a
         scan they stream live (``DataPath.current_open_scan``), in priority order.
         """
-        live = client_views.current_live_scan(self.client)
+        live = client_views.current_live_scan(self.client, queue)
         if live is not None:
             return live
         with self._lock:
