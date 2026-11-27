@@ -35,12 +35,15 @@ from bec_lib.procedures.hli import ProcedureHli
 from bec_lib.scan_history import ScanHistory
 from bec_lib.script_executor import ScriptExecutor
 from bec_lib.service_config import ServiceConfig
+from bec_lib.slurm import SlurmClient
 from bec_lib.user_macros import UserMacros
 from bec_lib.utils.import_utils import lazy_import_from
 
 logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
+    from slurm_manager.slurm_manager import SlurmManager
+
     from bec_lib.messages import (
         BECStatus,
         ServiceRequestMessage,
@@ -157,6 +160,7 @@ class BECClient(BECService):
         self.history = None
         self._live_updates = None
         self.dap = None
+        self._slurm_client: SlurmClient | None = None
         self.scans_namespace = SimpleNamespace()
         self._hli_funcs = {}
         self.metadata = {}
@@ -202,6 +206,21 @@ class BECClient(BECService):
             return ""
         except Exception:
             return ""
+
+    @property
+    def slurm(self) -> SlurmManager:
+        """Return the optional SlurmManager using server-provided cluster credentials.
+
+        Returns:
+            SlurmManager: Manager for job submission and status, log, and heartbeat callbacks.
+
+        Raises:
+            RuntimeError: The client has not started or credentials are unavailable.
+            ImportError: The optional Slurm dependency is not installed.
+        """
+        if self._slurm_client is None:
+            raise RuntimeError("Start the BEC client before accessing bec.slurm.")
+        return self._slurm_client.manager
 
     def start(self):
         """start the client"""
@@ -250,6 +269,7 @@ class BECClient(BECService):
         self.dap = DAPPlugins(self)
         self._update_username()
         self.beamline_states = BeamlineStateManager(client=self)
+        self._slurm_client = SlurmClient(self.connector)
 
     def alarms(self, severity=Alarms.WARNING):
         """get the next alarm with at least the specified severity"""
@@ -363,6 +383,9 @@ class BECClient(BECService):
 
     def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the client and all its components"""
+        if self._slurm_client is not None:
+            self._slurm_client.shutdown()
+            self._slurm_client = None
         super().shutdown(per_thread_timeout_s)
         if self.device_manager:
             self.device_manager.shutdown()

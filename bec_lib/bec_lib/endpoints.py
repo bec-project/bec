@@ -1284,6 +1284,19 @@ class MessageEndpoints:
             endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.STREAM
         )
 
+    @staticmethod
+    def slurm_credentials() -> EndpointInfo:
+        """Return the server-written credentials readable by authenticated BEC clients.
+
+        Returns:
+            EndpointInfo: Current Slurm credentials with change notifications.
+        """
+        return EndpointInfo(
+            endpoint=f"{EndpointType.INFO.value}/slurm/credentials",
+            message_type=messages.SlurmCredentialsMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
+
     # data processing
     @staticmethod
     def processed_data(process_id: str):
