@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.12.1 (2026-11-27)
+
+### Bug Fixes
+
+- **client**: Avoid replaying scan info during device RPCs
+  ([`11ef42e`](https://github.com/bec-project/bec/commit/11ef42e59adf545b196aff1bf3df82c57bb495dc))
+
+
 ## v4.12.0 (2026-11-27)
 
 ### Features
