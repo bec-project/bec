@@ -693,6 +693,14 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
     assert data_info.get("samx").get("shape") == (2,)
     assert data_info.get("samx_setpoint").get("shape") == (2,)
     assert data_info.get("samx").get("dtype") == "float64"
+    # The catalog of the next file lists what that file holds, not the devices of this one.
+    assert "samy" in file_writer.stored_data_info
+    storage.scan_segments = {
+        point: {name: data for name, data in segment.items() if name != "samy"}
+        for point, segment in segments.items()
+    }
+    file_writer.write(f"{tmp_path}/next.h5", storage, configuration_data={})
+    assert "samx" in file_writer.stored_data_info and "samy" not in file_writer.stored_data_info
     # open file and check that time stamps are correct
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert (

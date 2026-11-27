@@ -441,3 +441,33 @@ def test_signal_read_slabs_close_the_file_when_abandoned(mock_file, monkeypatch)
     # the file can be opened for writing again, so the reader let go of it
     with h5py.File(mock_file, "r+"):
         pass
+
+
+def test_signal_read_slabs_of_a_row_range(tmp_path, monkeypatch):
+    """A row range is read alone, in slabs that end where the slabs of a full read end."""
+    file_path = tmp_path / "scan.h5"
+    values = np.arange(1000, dtype=np.int32)
+    with h5py.File(file_path, "w") as f:
+        group = f.create_group("entry/collection/devices/det/det_wave")
+        group.create_dataset("value", data=values, chunks=(64,), maxshape=(None,))
+        group.create_dataset("timestamp", data=np.arange(1000, dtype=float))
+    reference = SignalDataReference(str(file_path), "entry/collection/devices/det/det_wave")
+    monkeypatch.setattr(SignalDataReference, "_SLAB_ELEMENTS", 200)  # 192 rows: 3 chunks
+
+    slabs = list(reference.read_slabs(start=250, stop=700))
+
+    assert [(slab.start, slab.stop, slab.total) for slab in slabs] == [
+        (250, 384, 1000),
+        (384, 576, 1000),
+        (576, 700, 1000),
+    ]
+    np.testing.assert_array_equal(
+        np.concatenate([slab.data["value"] for slab in slabs]), values[250:700]
+    )
+    np.testing.assert_array_equal(
+        np.concatenate([slab.data["timestamp"] for slab in slabs]), np.arange(250.0, 700.0)
+    )
+    # a range outside the signal is clipped, an empty one reads nothing
+    assert [(s.start, s.stop) for s in reference.read_slabs(start=990, stop=5000)] == [(990, 1000)]
+    assert list(reference.read_slabs(start=400, stop=400)) == []
+    assert [(s.start, s.stop) for s in reference.read_slabs(stop=100)] == [(0, 100)]
