@@ -1599,6 +1599,24 @@ class StatusMessage(BECMessage):
     info: ServiceInfo | dict
 
 
+class SlurmCredentialsMessage(BECMessage):
+    """Server-provided credentials for the single active cluster execution account.
+
+    Args:
+        cluster (str): Built-in Slurm cluster name.
+        username (str | None): Slurm execution account, or the token's default identity.
+        token (str): Slurm JWT, omitted from the message representation.
+        generation (int): Monotonically increasing revision, including across publisher restarts.
+    """
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+    msg_type: ClassVar[str] = "slurm_credentials"
+    cluster: Literal["ra", "sfonline", "slsonline"]
+    username: str | None = Field(default=None, min_length=1, pattern=r"^[!-~]+$")
+    token: str = Field(repr=False, min_length=1, pattern=r"^[!-~]+$")
+    generation: int = Field(ge=0)
+
+
 class FileMessage(BECMessage):
     """File message to inform about the status of a file writing operation
 
